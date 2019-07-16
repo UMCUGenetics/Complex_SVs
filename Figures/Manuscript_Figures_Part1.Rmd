@@ -1,0 +1,353 @@
+---
+title: "Prioritization of candidate driver genes in patients with de novo genomic rearrangements to improve molecular diagnosis"
+output: pdf_document
+frontsize: 11pt
+---
+
+```{r setup, echo = F}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.width=2.5, fig.height=2.5) 
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", 
+         paste0("\\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+
+library(scales) 
+library(ggplot2)
+library(reshape2)
+```
+
+### Primary settings 
+
+Input Data: 
+
+```{r, warning = F, size="small"}
+### Add the path to the project folder and output folder here:
+Project_folder <- ""
+Output_folder <- paste(Project_folder, "Results/Figures_raw/", sep = "")
+Output_folder <- ""
+Export_figures <- FALSE
+
+Genes_SVs <- read.delim(paste(Project_folder, "/Results/Integration/MP/Genes_SVs.txt", sep = ""), header = T, stringsAsFactors = F)
+
+# The breakpoint junctions file should be .txt version (tab separated) version of Supplementary Table S2
+Junctions2 <- read.delim(paste(Project_folder, "/Data/SV/Denovo_junctions.txt", sep = ""), header = T, stringsAsFactors = F)
+Junctions <- read.delim(paste(Project_folder, "/Data/SV/Table_S2.txt", sep = ""), header = T, stringsAsFactors = F, fill = T)
+# Add the patient ID to each empty cell:
+while(length(ind <- which(Junctions$ID == "")) > 0){
+  Junctions$ID[ind] <- Junctions$ID[ind -1]
+}
+## S1.txt contains columns E to columns AH from the first and the final two rows of Supplementary Table S1.
+Phenotype_categories <- read.delim(paste(Project_folder, "Data/Manuscript/Sup_Tables/S1.txt", sep = ""), header = F, stringsAsFactors = F)
+
+Candidate_Drivers <- read.delim(paste(Project_folder,"/Results/Integration/MP/Driver_summary.txt", sep = ""), stringsAsFactors = F) 
+```
+
+\newpage
+## Figure 1a : Phenotype overview 
+```{r, warning = F, message=F, fig.height=3, fig.width=5, echo = F}
+number_of_patients <- length(unique(Genes_SVs$Patient))
+
+Phenotypes <- data.frame(t(Phenotype_categories))
+colnames(Phenotypes) <- c("class", "number", "per")
+
+Phenotypes$class <- gsub("DD/ID", "Intellectual disability", Phenotypes$class)
+Phenotypes$class <- gsub("ASD or autistic features", "Autism", Phenotypes$class)
+
+Phenotypes$per <- gsub("%", "", Phenotypes$per)
+Phenotypes$per <- as.numeric(Phenotypes$per)
+Phenotypes$per <- Phenotypes$per / 100
+
+
+
+nervous_system <- c("Behavior disorders",
+                    "Intellectual disability",
+                    "Epilepsy",	
+                    "Hypotonia",	
+                    "Autism",	 
+                    "High-functioning ASD")
+Phenotypes$category <- ifelse(Phenotypes$class %in% nervous_system, 
+                                      "Nervous\nsystem", "Abnormality of ...")
+Phenotypes$category <- ifelse(Phenotypes$class %in% c("Male", "Female"), 
+                                      "Sex", Phenotypes$category)
+Phenotypes$category <- factor(Phenotypes$category, 
+                                      levels = c("Sex","Nervous\nsystem", 
+                                                 "Abnormality of ..."))
+
+# Select the phenotype categories occurring in >10% of the cases
+Phenotypes <- Phenotypes[which(Phenotypes$per > 0.1),]
+Phenotypes$class <- factor(Phenotypes$class, 
+                                levels = Phenotypes$class[order(Phenotypes$per)])
+
+phenotypes_plot <- ggplot(data = Phenotypes, 
+                          aes(x = class, y = per, fill = category)) + 
+  geom_bar(stat = "identity", 
+           col = "black", width = 0.7, lwd = 0.3) + 
+  theme_minimal(base_size = 8) + 
+  coord_cartesian(ylim = c(0,1)) +
+  coord_flip(ylim = c(0,1)) + 
+  facet_grid(category ~ ., switch="y", scales = "free_y", space = "free") +
+  scale_y_continuous(labels = percent, expand = c(0.01, 0.01), 
+                     breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1)) + 
+  labs(x  = "Clinical phenotype", 
+       y = paste("Frequency in cohort (n=", number_of_patients, ")", sep = "")) +
+    theme(axis.text.x = element_text(angle = 60, hjust = 1), 
+        axis.title = element_text(face = "plain", size = 8),
+        panel.spacing = unit(0.3, "lines"), 
+        strip.placement = "outside",
+        strip.background = element_rect(colour = "white", fill = "lightgrey"),
+        legend.position="none",
+        panel.grid.major.x = element_line(colour="darkgrey", size = 0.2),
+        panel.grid.minor.x = element_blank())
+  
+phenotypes_plot
+if(Export_figures == TRUE){
+  #ggsave(filename = paste(Output_folder, "1A_Phenotype_overview.pdf", sep = ""), height= 70, width= 70, units = "mm")
+  ggsave(filename = paste(Output_folder, "1A_Phenotype_overview.pdf", sep = ""), height= 75, width= 70, units = "mm")
+}
+```
+
+Total number of patients included: 
+```{r}
+number_of_patients <- length(unique(Genes_SVs$Patient))
+print(number_of_patients)
+```
+
+The main phenotypic feature in our cohort is abnormality of the nervous system. In this category are developmental delay / intelecutal disablity the most present. 
+
+```{r}
+#Phenotypes$N <- as.numeric(Phenotypes$number) * number_of_patients
+print(as.character(Phenotypes$number[Phenotypes$class == "Intellectual disability"]))
+```
+\newpage
+## Figure 1b : Number of total SVs 
+
+```{r, echo = F, warning = F, message = F}
+
+# Plot the number of breakpoint junctions in the cohortper SV type
+# Breakpoint junctions coordinates are shown in supplental Table S2
+bkp_j <- Junctions
+Patients <- factor(bkp_j$ID)
+
+bkp_j$ID <- reorder(bkp_j$ID, bkp_j$ID, FUN="length")
+bkp_j$ID  <- factor(bkp_j$ID, levels = rev(levels(bkp_j$ID)))
+bkp_j$Type <- as.character(bkp_j$Ori)
+simple <- levels(Patients)[table(Patients) < 4]
+bkp_j$Complexity <- ifelse(bkp_j$ID %in% simple, "Simple", "Complex")
+bkp_j$Complexity <- factor(bkp_j$Complexity, levels = c("Simple", "Complex"))
+
+bkp_j$Type <- ifelse(bkp_j$Type == "-/-" | bkp_j$Type == "+/+", "Inversion", bkp_j$Type)
+bkp_j$Type <- ifelse(bkp_j$Chr1 != bkp_j$Chr2, "Translocation", bkp_j$Type)
+bkp_j$Type[bkp_j$Type == "del"] <- "Deletion"
+bkp_j$Type[bkp_j$Type == "dup"] <- "Duplication"
+bkp_j$Type[bkp_j$Type == "-/+" | bkp_j$Type == "+/-"] <- "Intra-\nchromosomal"
+bkp_j$Type <- factor(bkp_j$Type)
+
+SV_colors <- c("Deletion" = "#E41A1C", 
+               "Duplication" = "#377EB8", 
+               "Intra-\nchromosomal" = "#4DAF4A", 
+               "Inversion" = "#984EA3", 
+               "Translocation" = "#FF7F00")
+
+# Fig 1: Number of detected de novo SV breakpoint junctions in the cohort
+bkp_j_cohort <- ggplot(data = bkp_j, aes(x = Type, fill = Type, alpha = Complexity)) +
+  geom_bar(stat= "count",fill = "white", width = 0.8, alpha = 1) + # bar background
+  geom_bar(stat= "count", col = "black", lwd = 0.3, width = 0.8) +
+  scale_fill_manual(values = SV_colors, guide = FALSE) + 
+  theme_classic(base_size = 8) +
+  theme(panel.grid.major.y = element_line(colour = "gray", size = 0.3),
+        legend.key.size = unit(0.6,"line"),
+        legend.title = element_blank(),
+        legend.margin=margin(t = 0, unit='cm'),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, hjust = 1), axis.title.x =  element_blank()) + 
+  scale_y_continuous(expand = c(0,0), limits = c(0,110)) + 
+  scale_alpha_discrete(range = c(0.5, 1)) +
+  labs(y = "Breakpoint junctions", x = "SV Type") 
+
+bkp_j_cohort
+
+if(Export_figures == TRUE){
+  #ggsave(filename = paste(Output_folder, "1B_Breakpoint_junctions.pdf", sep = ""), height= 40, width= 35, units = "mm", dpi = 300)
+  ggsave(filename = paste(Output_folder, "1B_Breakpoint_junctions.pdf", sep = ""), height= 50, width= 60, units = "mm", dpi = 300)
+}
+
+
+# Fig S1B: Number of de novo SV breakpoint junctions per individual
+bkp_j_patient <- ggplot(data = bkp_j, aes(x = ID, fill = Type)) + 
+                        geom_bar(stat= "count", col = "black", lwd = 0.2) + 
+                        scale_fill_manual(values = SV_colors) + 
+                        theme_classic(base_size = 8) + 
+                        theme(axis.text.x = element_text(angle = 70, hjust = 1), 
+                          panel.grid.major.y = element_line(colour = "gray", 
+                                                                      size = 0.3), 
+                          panel.grid.minor.y = element_line(colour = "lightgray", 
+                                                                      size = 0.15), 
+                          plot.title = element_text(hjust = 0.5), 
+                          legend.key.size = unit(0.5,"line"),
+                          legend.title = element_text(colour = "black", size = 7),
+                          legend.text = element_text(colour = "black", size = 7),
+                          legend.margin=margin(0,0,0,0),
+                          legend.justification = c(1, 1), 
+                          legend.position = c(1, 1)) + 
+                        scale_y_continuous(expand = c(0,0), limits = c(0,42)) + 
+                        labs(y = "Breakpoint junctions", x = "Individual ID")
+
+bkp_j_patient
+if(Export_figures == TRUE){
+  ggsave(filename = paste(Output_folder, "S1B_SV_bkpj_patient.pdf", sep = ""), height= 50, width= 100, units = "mm")
+}
+
+## Fig 1C: Number of newly detected SVs and SV complexities in the individuals previously only tudied by Array
+# Need to retrieve these numbers for Sup Table S2
+WGS_findings <- melt(data.frame(Same_SVs= 11, Additional_SVs = 5, New_SVs = 2))
+WGS_findings$variable <- factor(WGS_findings$variable, levels = c("New_SVs","Additional_SVs", "Same_SVs"))
+WGS_findings$Labels <-  c( "Same\nSVs", "Additional\nSVs","New\nSVs")
+
+WGS_findings_plot <- ggplot(WGS_findings, aes(x = "", y = value, fill = variable)) + 
+  geom_bar(width = 1, stat = "identity") + coord_polar("y", start=0) +
+  geom_text(aes(y = value / 2 + c(0, cumsum(value)[-length(value)]), x = 1.1, label = value), size = 2) + 
+  geom_text(aes(x = 1.82, y = value / 2 + c(0, cumsum(value)[-length(value)]), label = Labels), size = 2) +
+  #geom_label(aes(x = 1.82, y = value / 2 + c(0, cumsum(value)[-length(value)]), label = Labels), size = 2) +
+  scale_fill_brewer("Blues") + 
+  theme_minimal(base_size = 8) + 
+  labs(y = "WGS Findings\n(# individuals)") +
+  theme(axis.text.x=element_blank(),
+    #axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.border = element_blank(),
+    panel.grid=element_blank(),
+    axis.ticks = element_blank(),
+    legend.position="none") +
+  scale_y_reverse()
+WGS_findings_plot
+
+if(Export_figures == TRUE){
+  #ggsave(filename = paste(Output_folder, "1C_WGS_findings.pdf", sep = ""), height= 45, width= 35, units = "mm", dpi = 300)
+  ggsave(filename = paste(Output_folder, "1C_WGS_findings.pdf", sep = ""), height= 50, width= 40, units = "mm", dpi = 300)
+}
+```
+
+Most detected SVs are complex and balanced.
+
+```{r}
+addmargins(with(bkp_j, table(Type, Complexity)))
+```
+
+
+```{r}
+bkp_j$cp <- ifelse(bkp_j$Type == "DEL" | bkp_j$Type == "DUP", "Unbalanced", "Balanced")
+addmargins(with(bkp_j, table(cp, Complexity)))
+```
+Complexity per patient:
+```{r}
+pat_complex <- data.frame(with(bkp_j, table(Complexity, Individual)))
+pat_complex <- pat_complex[pat_complex$Freq > 0,] 
+addmargins(with(pat_complex, table(Complexity)))
+```
+There are 17 patients with simple SVs and 22 patients with complex SVs. 
+
+```{r, echo = F, warning = F, message = F, fig.width = 4, fig.height = 5}
+pdf(file = paste(Output_folder, "S1A_Previous_techniques.pdf", sep = ""), width = 2, height = 2, pointsize = 6, family = "ArialMT")
+
+Previous_techniques <- data.frame(table(Junctions$Previous[!duplicated(Junctions$Individual)]))
+Previous_techniques$Var1 <- factor(Previous_techniques$Var1, levels = c("MPS","liWGS","Array+WES","Array"))
+Previous_techniques_plot <- ggplot(Previous_techniques, aes(x = "", y = Freq, fill = Var1)) + geom_bar(width = 1, stat = "identity", col = "black", lwd = 0.3) + 
+  coord_polar("y", start=0) +
+  geom_text(aes(y = Freq / 2 + c(0, cumsum(Freq)[-length(Freq)]), x = 1.1, label = Freq), size = 2) + 
+  geom_text(aes(x = 1.82, y = Freq / 2 + c(0, cumsum(Freq)[-length(Freq)]), label = Var1), size = 2) +
+  #geom_label(aes(x = 1.82, y = value / 2 + c(0, cumsum(value)[-length(value)]), label = Labels), size = 2) +
+  scale_fill_manual(values = list("Array" = "#E41A1C", "Array+WES" = "#FF7F00", "liWGS" = "#377EB8", "MPS" = "#4DAF4A")) + 
+  theme_minimal(base_size = 8) + 
+  labs(y = "Previously used tests\n(# Individuals)") +
+  theme(axis.text.x=element_blank(),
+    #axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.border = element_blank(),
+    panel.grid=element_blank(),I
+    axis.ticks = element_blank(),
+    legend.position="none")
+Previous_techniques_plot
+
+# par(mar = c(1,3,1,5))
+# pie(x = table(Junctions$Previous[!duplicated(Junctions$Individual)]),
+#     init.angle = 90,
+#     clockwise = T,
+#     col = c("royalblue", "brown3", "forestgreen", "darkorange"),
+#     labels = paste(names(table(Junctions$Previous[!duplicated(Junctions$Individual)])), 
+#                    " (",as.numeric(table(Junctions$Previous[!duplicated(Junctions$Individual)])) ,")", sep = ""))
+dev.off()
+```
+
+<!-- ```{r, echo = F, fig.width = 3.5, fig.height = 4.5} -->
+<!-- #pdf(file = paste(output_folder, "new_events.pdf", sep = ""), width = 1.7, height = 1.7, pointsize = 6) -->
+<!-- par(mar = c(1,3,1,5)) -->
+<!-- pie(x = table(phenodrivers$New_event[phenodrivers$Previous_studies == "Array" |  -->
+<!--                                        phenodrivers$Previous_studies == "Array+WES"]), -->
+<!--     init.angle = 90, -->
+<!--     col = c("brown", "darkorange"), -->
+<!--     labels = paste(names(table(phenodrivers$New_event[phenodrivers$Previous_studies == "Array" |  -->
+<!--                                                         phenodrivers$Previous_studies == "Array+WES"])),  -->
+<!--                    " (",as.numeric(table(phenodrivers$New_event[phenodrivers$Previous_studies == "Array" |  -->
+<!--                                                                   phenodrivers$Previous_studies == "Array+WES"])) ,")", sep = "")) -->
+<!-- #dev.off() -->
+<!-- ``` -->
+
+<!-- ```{r, echo = F} -->
+<!-- New_event <- ggplot(phenodrivers) +  -->
+<!--               aes(x = phenodrivers$d_Previous_studies,  -->
+<!--                   fill = phenodrivers$New_event) +  -->
+<!--               geom_bar() + -->
+<!--               theme_classic(base_size = 8) + -->
+<!--               theme(axis.text.x = element_text(angle = 70, hjust = 1),  -->
+<!--                 panel.grid.major.y = element_line(colour = "gray", size = 0.3),  -->
+<!--                 panel.grid.minor.y = element_line(colour = "lightgray", size = 0.15), -->
+<!--                 plot.title = element_text(hjust = 0.5),  -->
+<!--                 legend.key.size = unit(0.5,"line"), -->
+<!--                 legend.title = element_text(colour = "black", size = 6), -->
+<!--                 legend.text = element_text(colour = "black", size = 6), -->
+<!--                 legend.justification = c(0, 1),  -->
+<!--                 legend.position = c(0, 1)) + -->
+<!--               labs(y = "Count", x = "Previous diagnotics") + -->
+<!--               scale_fill_discrete(name="Additional event",  -->
+<!--                                     labels=c("No", "Yes")) -->
+
+<!-- New_event -->
+<!-- #ggsave(filename = paste(output_folder, "SV_sizes.pdf", sep = ""),  -->
+<!-- #       height= 55, width= 40, units = "mm") -->
+
+<!-- ``` -->
+\newpage
+## Supplementary figure 1c : SV sizes of Deletions, Duplications and inversions
+```{r, echo = F, warning = F, message = F}
+SVs_direct <- bkp_j[bkp_j$Type %in% c("Deletion", "Duplication", "Inversion"),]
+SVs_direct$Type <- factor(SVs_direct$Type)
+SVs_direct$width <- abs(SVs_direct$Pos2 - SVs_direct$Pos1)
+SV_colors3 <- c("Deletion" = "#E41A1C", "Duplication" = "#377EB8", "Inversion" = "#984EA3")
+
+SV_sizes <- ggplot(SVs_direct, aes(x = Type, y = width, fill = Type)) +
+            stat_boxplot(geom = "errorbar", width = 0.3, lwd = 0.3) +
+            theme_classic(base_size = 8) +
+            geom_boxplot(lwd= 0.3, outlier.size = 0.2) +
+            scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
+                          labels = trans_format("log10", math_format(10^.x))) +
+            scale_fill_manual(values = SV_colors3) +
+            theme(axis.text.x = element_text(angle = 60, hjust = 1, size = 8), panel.grid.major.y = element_line(colour = "lightgray", size = 0.2),
+                  axis.text.y = element_text(size = 8), axis.title.x=element_blank(),
+                  #panel.grid.minor.y = element_line(colour = "lightgray"),
+                  plot.title = element_text(hjust = 0.5), legend.position="none") +
+            annotate(geom = "text", x= 1:3, y = 1e8, label = paste("n = ", as.numeric(table(SVs_direct$Type)), sep = ""), fontface = 2, size = 2) +
+            labs(y = "SV Size (bp)", x= "SV Type", fill = "SV Type")
+
+SV_sizes
+if(Export_figures == TRUE){
+  ggsave(filename = paste(Output_folder, "S1C_SV_sizes.pdf", sep = ""), height= 55, width= 45, units = "mm")
+}
+
+print("# Median sizes of SVs:")
+print(aggregate(SVs_direct$width ~ SVs_direct$Type, FUN = "median"))
+```
+
+

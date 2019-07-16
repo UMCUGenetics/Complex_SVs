@@ -1,0 +1,605 @@
+---
+title: "Prioritization of candidate driver genes in patients with de novo genomic rearrangements to improve molecular diagnosis"
+output: pdf_document
+frontsize: 11pt
+
+---
+
+```{r setup, echo = F}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.width=2.5, fig.height=2.5) 
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", 
+         paste0("\\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+
+library(ggplot2)
+library(reshape2)
+
+### Add the path to the project folder and output folder here:
+project_folder <- ""
+source(paste(project_folder,"Scripts/Integration/Phenotype_functions.R", sep =""))
+Output_folder <- paste(project_folder, "Results/Figures_raw/", sep = "")
+Output_folder <- ""
+export_figures <- TRUE
+```
+
+# Input data  
+First read all data. The following files are needed:  
+For the DGAP/Balanced cohort:  
+- Output file of SV_Data_Integration.R ("Genes_SVs.txt")  
+- The breakpoint junctions (txt file containing columns B, H, I, J, K, L from Supplementary Table 3 from Redin et al.)  
+- Driver summary obtained from SV_Data_Integration.R ("Driver_summary.txt")  
+- The drivers proposed by Redin et al (txt file containing Supplementary table 8 from Redin et al, with the first two rows (headers) removed)  
+
+For the DIAG/CNV cohort:  
+- List of CNVs and phenotypes (txt version of Table S7)  
+- Output file of SV_Data_Integration.R ("Genes_SVs.txt")  
+- Driver summary obtained from SV_Data_Integration.R ("Driver_summary.txt")  
+
+
+```{r, warning = F, echo=F}
+## Read input data for the DIAG cohort
+Junctions_DIAG <- read.delim(paste(project_folder, "Data/Cohorts/Table_S7.txt", sep = ""), stringsAsFactors = F)
+Junctions_DIAG$Cohort <- "CNV"
+
+Genes_SVs_DIAG <- read.delim(paste(project_folder,"Results/Integration/DIAG/Genes_SVs.txt", sep = ""), stringsAsFactors = F)
+Genes_SVs_DIAG$Cohort <- "CNV"
+Drivers_summary_DIAG <- read.delim(paste(project_folder,"/Results/Integration/DIAG/Driver_summary.txt", sep = ""), stringsAsFactors = F)
+
+## Read input dat for the DGAP cohort:
+Junctions_DGAP <- read.delim(paste(project_folder,"Data/SV/DGAP_SV_junctions_filtered.txt", sep = ""), stringsAsFactors = F)
+Junctions_DGAP$Cohort <- "Balanced"
+# These patient were already included in the other cohort and were not studied here:
+exclude_patients <- c( "UTR2","UTR8","UTR22","DGAP122","DGAP127","DGAP133","DGAP137","DGAP139","DGAP143","DGAP154",
+                       "DGAP161','DGAP168','DGAP196","DGAP200","DGAP203","DGAP211","DGAP233","DGAP261","DGAP277","DGAP294")
+Junctions_DGAP <- Junctions_DGAP[!Junctions_DGAP$Patient %in% exclude_patients,]
+
+# Supplementary table 8 (remove first 2 rows, save a tab-delimited text)
+Previous_drivers_DGAP <- read.delim(paste(project_folder, "Data/Cohorts/DGAP_drivers.txt", sep = ""), stringsAsFactors = F, check.names = F)
+Previous_drivers_DGAP <- Previous_drivers_DGAP[Previous_drivers_DGAP$`Subject ID` %in% Junctions_DGAP$Patient,]
+
+Genes_SVs_DGAP <- read.delim(paste(project_folder,"Results/Integration/DGAP/Genes_SVs.txt", sep = ""), stringsAsFactors = F)
+Genes_SVs_DGAP$Cohort <- "Balanced"
+
+Drivers_summary_DGAP <- read.delim(paste(project_folder,"/Results/Integration/DGAP/Driver_summary.txt", sep = ""), stringsAsFactors = F)
+
+```
+\newpage
+## Figure S7a + S7b: Characterization of cohorts  
+First determine how many patients and SVs each cohort contains
+
+```{r, warning = F, echo=F, error=F}
+# Merge the breakpoint junctions of both cohorts
+All_junctions <- rbind(Junctions_DGAP[,c("Patient", "Cohort", "chr1","der1","chr2","der2","ori","type", "cyto1")],
+                       Junctions_DIAG[,c("Patient", "Cohort", "chr1","der1","chr2","der2","ori","type", "cyto1")])
+# Classify the SVs as simple if there are less than 4 junctions in the patient:
+simple_rearrangements <- unique(All_junctions$Patient)[which(as.vector(table(All_junctions$Patient)) < 4)]
+All_junctions$Complexity <- "Complex"
+All_junctions$Complexity[which(All_junctions$Patient %in% simple_rearrangements)] <- "Simple"
+All_junctions$Complexity <- factor(All_junctions$Complexity, levels = c(  "Simple", "Complex"))
+All_junctions$type <- factor(All_junctions$type)
+levels(All_junctions$type) <- list("TRA" ="Translocation", 
+                                   "INV" = "Inversion" , 
+                                   "DEL" ="Deletion" , 
+                                   "DUP"= "Duplication",
+                                   "INTRA" = "Intrachromosomal",
+                                   "DEL" = "Homozygous deletion")
+SV_colors <- c("DEL" = "#E41A1C", 
+               "DUP" = "#377EB8", 
+               "INTRA" = "#4DAF4A", 
+               "INV" = "#984EA3", 
+               "TRA" = "#FF7F00")
+
+# Fig S9A: Number of detected de novo SV breakpoint junctions in DGAP and Diagnostics cohort
+number_SVs_plot <- ggplot(data = All_junctions, aes(x = type, fill = type, alpha = Complexity)) + 
+  geom_bar(stat= "count", fill = "white", alpha = 1, lwd = 0.3, width = 0.8)  + 
+  
+  geom_bar(stat= "count", col = "black", lwd = 0.3, width = 0.8)  + 
+  
+  facet_grid(~Cohort, scales = "free", space = "free") +
+  scale_fill_manual(values = SV_colors, guide = FALSE) +
+  theme_bw(base_size = 8) +
+  theme(panel.grid.major.y = element_line(colour = "gray", size = 0.3), 
+        panel.grid.major.x = element_blank(),
+        strip.text = element_text(face = "bold"),
+        strip.background = element_rect(size = 0.5),
+        plot.title = element_text(hjust = 0.6), 
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.border = element_rect(colour = "black",size = 0.5),
+        legend.key.size = unit(0.5,"line"),
+        legend.title = element_text(size = 7),
+        legend.margin=margin(t = 0, unit='cm')) +
+  scale_y_continuous(expand = c(0,0), limits = c(0,450)) +
+  scale_alpha_discrete(range = c(0.5, 1)) +
+  labs(y = "Breakpoint junctions", x = "SV Type") 
+number_SVs_plot
+dev.off()
+
+if(export_figures == TRUE){
+  pdf(file = paste(Output_folder, "S7A_Breakpoint_junctions_DGAP_DIAG.pdf", sep = ""), width = 2.8, height = 2.1, pointsize = 9, family = "ArialMT")
+  print(number_SVs_plot)
+  dev.off()
+}
+
+```
+Number of individuals per cohort:
+```{r, warning = F, echo=F}
+table(All_junctions$Cohort[!duplicated(All_junctions$Patient)])
+```
+
+Next determine how many of these SVs were previously classified as pathogenic or likely pathogenic.
+
+```{r, warning = F, echo=F}
+# Process the table containing the previously proposed drivers
+names(Previous_drivers_DGAP)[names(Previous_drivers_DGAP) == "Subject ID"] <- "Patient"
+names(Previous_drivers_DGAP)[names(Previous_drivers_DGAP) == "Conclusion"] <- "Previous_diagnosis"
+Previous_drivers_DGAP$Cohort <- "Balanced"
+Previous_drivers_DGAP$`Proposed Primary Phenotypic driver(s)` <- gsub("\\s*\\([^\\)]+\\)", "", perl=TRUE, x = Previous_drivers_DGAP$`Proposed Primary Phenotypic driver(s)`)
+Previous_drivers_DGAP$`Other likely contributors` <- gsub("\\s*\\([^\\)]+\\)", "", perl=TRUE, x = Previous_drivers_DGAP$`Other likely contributors`)
+
+# Collect the pathogenic and likely pathogenic genes in lists:
+DGAP_pathogenic <- list()
+DGAP_likely_pathogenic <- list()
+
+for(patient in unique(Previous_drivers_DGAP$Patient)){
+  #print(patient)
+  drivers_patient <- Previous_drivers_DGAP[which(Previous_drivers_DGAP$Patient == patient),]
+  
+  # Only select the gene drivers (not the entire del/dups):
+  pathogenic_svs <- drivers_patient[drivers_patient$Previous_diagnosis == "Pathogenic",]
+  drivers_pathogenic <- unlist(strsplit(x = pathogenic_svs$`Proposed Primary Phenotypic driver(s)`, split = ", |; "))
+  drivers_pathogenic <- gsub("^\\d.*", "", drivers_pathogenic) # remove entries starting with a digit (which are not driver genes)
+  drivers_pathogenic <- drivers_pathogenic[drivers_pathogenic != ""]
+  drivers_pathogenic <- drivers_pathogenic[drivers_pathogenic != "Unknown"]
+  
+  likely_pathogenic_svs <- drivers_patient[drivers_patient$Previous_diagnosis != "Pathogenic",]
+  drivers_likely_pathogenic <- unlist(strsplit(x = likely_pathogenic_svs$`Proposed Primary Phenotypic driver(s)`, split = ", "))
+  drivers_likely_pathogenic <- gsub("^\\d.*", "", drivers_likely_pathogenic) # remove entries starting with a digit (which are not driver genes)
+  drivers_likely_pathogenic <- drivers_likely_pathogenic[drivers_likely_pathogenic != ""]
+  drivers_likely_pathogenic <- drivers_likely_pathogenic[drivers_likely_pathogenic != "Unknown"]
+  
+  other_drivers <- unlist(strsplit(x = drivers_patient$`Other likely contributors`, split = ", "))
+  other_drivers <- other_drivers[other_drivers != "-"]
+  
+  likely_patho_patient <- list(redin = c(drivers_likely_pathogenic,other_drivers))
+  names(likely_patho_patient) <- patient
+  patho_patient <- list(redin = drivers_pathogenic)
+  names(patho_patient) <- patient
+  
+  DGAP_pathogenic <- c(DGAP_pathogenic, patho_patient)
+  DGAP_likely_pathogenic <- c(DGAP_likely_pathogenic, likely_patho_patient)
+  if(length(drivers_pathogenic) + length(drivers_likely_pathogenic) + length(other_drivers) > 0){
+    Previous_drivers_DGAP$Previous_drivers[Previous_drivers_DGAP$Patient == patient] <- paste(drivers_pathogenic, drivers_likely_pathogenic, other_drivers, sep = ",")
+    
+  }
+}
+Previous_drivers_DGAP$Drivers <- "Yes"
+Previous_drivers_DGAP$Drivers[is.na(Previous_drivers_DGAP$Previous_drivers)] <- "No"
+Junctions_DIAG$Drivers <- "No"
+all_diagnoses <- rbind(Previous_drivers_DGAP[,c("Patient", "Cohort", "Previous_diagnosis", "Drivers")], 
+                       Junctions_DIAG[!duplicated(Junctions_DIAG$Patient),c("Patient", "Cohort", "Previous_diagnosis", "Drivers")])
+
+all_diagnoses$Previous_diagnosis <- factor(all_diagnoses$Previous_diagnosis, levels = c("VUS", "Likely Pathogenic", "Pathogenic"))
+
+previous_diagnoses_plot <- ggplot(all_diagnoses, aes(x = Cohort, fill = Previous_diagnosis)) + 
+  geom_bar(stat= "count", fill = "white", alpha = 1, lwd = 0.3, width = 0.8)  + 
+  geom_bar(stat = "count", col = "black", lwd = 0.3, width = 0.8) +
+  theme_bw(base_size = 8) +
+  theme(panel.grid.major.y = element_line(colour = "gray", size = 0.3), 
+        panel.grid.major.x = element_blank(),
+        legend.key.size = unit(0.6,"line"),
+        legend.title = element_text(size = 7),
+        legend.margin=margin(t = 0, unit='cm'),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.border = element_rect(colour = "black", size = 0.5)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0,250)) +
+  scale_alpha_discrete(range = c(0.7, 1))+
+  scale_fill_manual(values = c("#377EB8", "#FF7F00", "#E41A1C")) +
+  labs(y = "Individuals (#)", x = "Cohort", fill = "Previous SV\nClassifications") 
+previous_diagnoses_plot
+dev.off()
+if(export_figures == TRUE){
+  pdf(file = paste(Output_folder, "S7B_Previous_diagnoses_DGAP_DIAG.pdf", sep = ""), width = 2.2, height = 2, pointsize = 9, family = "ArialMT")
+  print(previous_diagnoses_plot)
+  dev.off()
+}
+
+# add the classification of redin et al to Genes_SVs
+for(patient in unique(Genes_SVs_DGAP$Patient)){
+  
+  patho_drivers <- DGAP_pathogenic[[patient]]
+  likely_patho_drivers <- DGAP_likely_pathogenic[[patient]]
+  
+  Genes_SVs_DGAP[Genes_SVs_DGAP$Patient == patient, "Previous_classification"] <- ifelse(Genes_SVs_DGAP$hgnc_symbol[Genes_SVs_DGAP$Patient == patient] %in% patho_drivers, "Pathogenic", "Benign")
+  Genes_SVs_DGAP[Genes_SVs_DGAP$Patient == patient, "Previous_classification"] <- ifelse(Genes_SVs_DGAP$hgnc_symbol[Genes_SVs_DGAP$Patient == patient] %in% likely_patho_drivers, "Likely_pathogenic", Genes_SVs_DGAP[Genes_SVs_DGAP$Patient == patient, "Previous_classification"])
+}
+Genes_SVs_DIAG$Previous_classification <- NA
+
+```
+Previous classifications per cohort:
+```{r, warning = F, echo=F}
+table(all_diagnoses$Previous_diagnosis, all_diagnoses$Cohort)
+
+# percentage of patients with diagnosis
+print("Percentage of DGAP patients with SVs previously classified as (likely) pathogenic:")
+length(which(all_diagnoses$Previous_diagnosis[all_diagnoses$Cohort == "Balanced"] != "VUS")) / nrow(all_diagnoses[all_diagnoses$Cohort == "Balanced",])
+# percentage of patients with diagnosis and proposed driver genes
+print("Percentage of DGAP patients with a diagnosis and with proposed drivers:")
+length(which(all_diagnoses$Previous_diagnosis[all_diagnoses$Cohort == "Balanced"] != "VUS" & all_diagnoses$Drivers[all_diagnoses$Cohort == "Balanced"] == "Yes")) / 
+  nrow(all_diagnoses[all_diagnoses$Cohort == "Balanced" & all_diagnoses$Previous_diagnosis != "VUS",])
+# Patients with (likely) pathogenic SVs, but without proposed drivers:
+all_diagnoses[which(all_diagnoses$Cohort == "Balanced" & all_diagnoses$Previous_diagnosis != "VUS" & all_diagnoses$Drivers == "No"),]
+
+```
+\newpage
+## Figure S7c + S7d :  Detected candidate drivers per cohort
+Number of genes per SV category
+
+```{r, warning = F, echo=F, dev="pdf"}
+Genes_SVs_Merged <- rbind(Genes_SVs_DGAP[,c("Patient", "Gene_ID", "SV_type", "Classification", "Cohort", "Previous_classification")], Genes_SVs_DIAG[,c("Patient", "Gene_ID", "SV_type", "Classification", "Cohort", "Previous_classification")])
+Genes_SVs_Merged$SV <- Genes_SVs_Merged$SV_type
+Genes_SVs_Merged$SV[Genes_SVs_Merged$SV == "Flanking"] <- "FLANK"
+Genes_SVs_Merged$SV[Genes_SVs_Merged$SV == "Deletion" | Genes_SVs_Merged$SV == "Homozygous deletion"] <- "DEL"
+Genes_SVs_Merged$SV[Genes_SVs_Merged$SV == "Duplication"] <- "DUP"
+Genes_SVs_Merged$SV[Genes_SVs_Merged$SV == "Truncation"] <- "TRUNC"
+Genes_SVs_Merged$SV <- factor(Genes_SVs_Merged$SV, levels = c("DEL", "DUP", "TRUNC", "FLANK"))
+
+## Plot the number of affected genes per SV type for both cohorts:
+Gene_colors <- c("DEL" = "#E41A1C", 
+                 "DUP" = "#377EB8", 
+                 "TRUNC" = "#FF7F00",
+                 "FLANK" = "#FFD300")
+
+genes_per_SV_type <- ggplot(Genes_SVs_Merged, aes(x = SV, fill = SV)) + 
+  geom_bar(stat = "count", col = "black", lwd = 0.3) + 
+  facet_grid(~Cohort, scales = "free", space = "free") +
+  scale_fill_manual(values = Gene_colors) +
+  scale_y_continuous(expand = c(0,0), limits = c(0,7000)) + 
+  theme_classic(base_size = 8) + 
+  theme(panel.grid.major.y = element_line(colour = "lightgray", size = 0.3), 
+        panel.grid.minor.y = element_line(colour = "lightgray", size = 0.3),
+        strip.background = element_rect(fill="gray", size = 0.5),
+        strip.text = element_text(size = 8, face = "bold"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 0.5),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none", text=element_text(family="Arial")) +
+  labs(y = "Number of genes", x = "SV Category")
+
+genes_per_SV_type
+dev.off()
+if(export_figures == TRUE){
+  genes_per_SV_type
+  ggsave(filename = paste(Output_folder, "S7C_Genes_per_SVtype.pdf", sep = ""), height= 55, width= 70, units = "mm", device = cairo_pdf)
+
+  # pdf(file = paste(Output_folder, "S7C_Genes_per_SVtype.pdf", sep = ""), width = 3, height = 2, pointsize = 9, family = "ArialMT")
+  # print(genes_per_SV_type)
+  # dev.off()
+}
+
+```
+
+Plot the number of direct/indirect drivers
+
+```{r, warning = F, echo=F, dev="pdf"}
+Genes_SVs2 <- Genes_SVs_Merged
+Genes_SVs2$Effect <- ifelse(Genes_SVs2$SV_type %in% c("Deletion", "Duplication", "Truncation", "Insertion"), "Direct", "Indirect")
+Genes_SVs2$Driver <- gsub(Genes_SVs2$Classification, pattern = "_driver", replacement = "")
+Genes_SVs2$Driver <- factor(Genes_SVs2$Driver, levels = c("No", "T3", "T2","T1"))
+
+Driver_colors <- c("T1" = "#E41A1C", 
+                   "T2" = "darkorange",
+               "T3" = "#FFD300",
+               "No" = "#377EB8")
+
+
+plot_drivers <- ggplot(Genes_SVs2[Genes_SVs2$Driver != "No",], aes(x = Effect, fill = Driver)) + 
+  geom_bar(stat = "count", col = "black", lwd = 0.3, width = 0.8) +
+  facet_grid(~Cohort, scales = "free", space = "free") +
+  scale_fill_manual(values = Driver_colors) + 
+  theme_bw(base_size = 8) + 
+  theme(panel.grid.major.y = element_line(colour = "lightgray", size = 0.3), 
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        strip.background = element_rect(fill="gray", size = 0.5),
+        strip.text = element_text(size = 8, face = "bold"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 0.5),
+        legend.key.size = unit(0.5,"line"),
+        legend.margin = margin(0,0,0,0), legend.title = element_text(size = 7), axis.title = element_text(size= 8), text=element_text(family="Arial")) + 
+  scale_y_continuous(expand = c(0,0), limits = c(0,510)) + 
+  labs(y = "Candidate drivers (#)", x = "SV Effect", fill = "Driver\nClassification") 
+
+plot_drivers
+
+dev.off()
+if(export_figures == TRUE){
+    ggsave(filename = paste(Output_folder, "S7D_Number_Candidate_Drivers_cohorts.pdf", sep = ""), height= 55, width= 60, units = "mm", device = cairo_pdf)
+
+  # pdf(file = paste(Output_folder, "S7D_Number_Candidate_Drivers_cohorts.pdf", sep = ""), width = 3, height = 2, pointsize = 9, family = "ArialMT")
+  # print(plot_drivers)
+  dev.off()
+}
+
+print("Number of genes +/- 1Mb from SVs per cohort")
+print(table(Genes_SVs2$SV, Genes_SVs2$Cohort))
+
+print("Number of candidate drivers per cohort")
+print(table(Genes_SVs2$Driver, Genes_SVs2$Cohort))
+
+print("Comparison new classification with old classification balanced cohort:")
+print(table(Genes_SVs2$Driver[Genes_SVs2$Cohort == "Balanced"], Genes_SVs2$Previous_classification[Genes_SVs2$Cohort == "Balanced"]))
+
+
+```
+\newpage
+## Figure 4a + 4b : Number of identified candidate drivers in cohorts
+Next we want to determine which drivers are found in the patients with SVs previously classified as pathogenic or VUS
+
+```{r, warning = F, echo=F}
+Drivers_summary_DGAP$Cohort <- "Balanced"
+Drivers_summary_DGAP2 <- merge(Drivers_summary_DGAP, Previous_drivers_DGAP[,c("Patient", "Previous_diagnosis", "Previous_drivers")])
+
+Drivers_summary_DIAG$Cohort <- "CNV"
+Drivers_summary_DIAG2 <- merge(Drivers_summary_DIAG, Junctions_DIAG[which(!duplicated(Junctions_DIAG$Patient)),c("Patient","Previous_diagnosis")])
+Drivers_summary_DIAG2$Previous_drivers <- NA
+
+Merged_Driver_Summary <- rbind(Drivers_summary_DGAP2, Drivers_summary_DIAG2)
+Merged_Driver_Summary$Diagnosis <- Merged_Driver_Summary$Conclusion
+
+# Determine if the strongest driver in a patient is T1, T2 or T3
+Merged_Driver_Summary$Strongest_driver <- ifelse(Merged_Driver_Summary$T3_direct != "" | Merged_Driver_Summary$T3_indirect != "", "T3", "None")
+Merged_Driver_Summary$Strongest_driver <- ifelse(Merged_Driver_Summary$T2_direct != "" | Merged_Driver_Summary$T2_indirect != "", "T2", Merged_Driver_Summary$Strongest_driver)
+Merged_Driver_Summary$Strongest_driver <- ifelse(Merged_Driver_Summary$T1_direct != "" | Merged_Driver_Summary$T1_indirect != "", "T1", Merged_Driver_Summary$Strongest_driver)
+
+Merged_Driver_Summary$Strongest_driver <- factor(Merged_Driver_Summary$Strongest_driver, levels = c( "None", "T3", "T2", "T1"))
+
+Merged_Driver_Summary$Previous_classification <- ifelse(Merged_Driver_Summary$Previous_diagnosis %in% c("Pathogenic", "Likely Pathogenic"), "Pathogenic", "VUS")
+
+print("Number of individuals with SVs previously classified as VUS with T1/T2 drivers")
+
+table(Merged_Driver_Summary$Cohort[which(Merged_Driver_Summary$Strongest_driver %in% c("T1", "T2") & Merged_Driver_Summary$Previous_classification == "VUS")])
+
+# Plot the strongest driver per patient compared to previous classification
+strongest_driver_per_patient <- ggplot(Merged_Driver_Summary, aes(x = Previous_classification, fill = Strongest_driver)) + 
+  geom_bar(stat = "count", col = "black", lwd = 0.25, width = 0.8) + 
+  facet_grid(~Cohort) +
+   scale_y_continuous(expand = c(0,0), limits = c(0,130)) + 
+  scale_fill_brewer(palette = "Reds") +
+  theme_classic(base_size = 8) + 
+  theme(panel.grid.major.y = element_line(colour = "lightgray", size = 0.3), 
+        panel.grid.minor.y = element_blank(),
+        strip.background = element_rect(fill="gray", size = 0.5),
+        strip.text = element_text(size = 6, face = "bold"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 0.5),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.line = element_line(size = 0.3),
+        axis.title = element_text(size = 6),
+        legend.key.size = unit(0.7, "line"), legend.margin = margin(0,0,0,0), legend.title = element_text(size = 6)) +
+  labs(y = "Individuals (#)", x = "Previous SV classification", fill = "Strongest\ncandidate\ndriver")
+
+strongest_driver_per_patient
+
+if(export_figures == TRUE){
+  pdf(file = paste(Output_folder, "4A_strongest_driver_per_patient.pdf", sep = ""), width = 1.8, height = 1.55, pointsize = 9, family = "ArialMT")
+  print(strongest_driver_per_patient)
+  dev.off()
+}
+
+
+```
+
+Determine if the predicted drivers are directly/indirectly affected (or both)
+
+```{r, warning = F, echo=F}
+## positional effects
+
+# Drivers_per_patient <- data.frame(Genes_SVs_Merged[Genes_SVs_Merged$SV == "FLANK" & Genes_SVs_Merged$Classification %in% c("T1", "T2"),])
+
+# Count the number of directly and indirectly affected T1/T2 candidate drivers per patient
+indirect_genes <- data.frame(table(Genes_SVs_Merged$Classification[which(Genes_SVs_Merged$SV_type == "Flanking")],Genes_SVs_Merged$Patient[which(Genes_SVs_Merged$SV_type == "Flanking")]))
+direct_genes <- data.frame(table(Genes_SVs_Merged$Classification[which(Genes_SVs_Merged$SV_type != "Flanking")],Genes_SVs_Merged$Patient[which(Genes_SVs_Merged$SV_type != "Flanking")]))
+Indirect_drivers_per_patient <- aggregate(indirect_genes$Freq[indirect_genes$Var1 %in% c("T1", "T2")] ~ indirect_genes$Var2[indirect_genes$Var1 %in% c("T1", "T2")], FUN = "sum")
+Direct_drivers_per_patient <- aggregate(direct_genes$Freq[direct_genes$Var1 %in% c("T1", "T2")] ~ direct_genes$Var2[direct_genes$Var1 %in% c("T1", "T2")], FUN = "sum")
+names(Indirect_drivers_per_patient) <- c("Patient", "Indirect_drivers")
+names(Direct_drivers_per_patient) <- c("Patient", "Direct_drivers")
+
+# Add the number of direct and indirect drivers to the Driver summary
+all_diagnoses2 <- merge(Merged_Driver_Summary, Indirect_drivers_per_patient, all.x = T, by = "Patient")
+all_diagnoses2 <- merge(all_diagnoses2, Direct_drivers_per_patient, all.x = T)
+all_diagnoses2$Direct_drivers[is.na(all_diagnoses2$Direct_drivers)] <- 0
+all_diagnoses2$Indirect_drivers[is.na(all_diagnoses2$Indirect_drivers)] <- 0
+
+# Determine if patient have direct, indirect or both types of drivers
+all_diagnoses2$Drivers2 <- ifelse(all_diagnoses2$Indirect_drivers > 0 & all_diagnoses2$Direct_drivers == 0, "Indirect", "Direct" )
+all_diagnoses2$Drivers2 <- ifelse(all_diagnoses2$Indirect_drivers == 0 & all_diagnoses2$Direct_drivers == 0, "None", all_diagnoses2$Drivers2  )
+all_diagnoses2$Drivers2 <- ifelse(all_diagnoses2$Indirect_drivers > 0 & all_diagnoses2$Direct_drivers > 0,"Both",  all_diagnoses2$Drivers2)
+
+driver_count <- data.frame(table(all_diagnoses2$Drivers2, all_diagnoses2$Cohort))
+  
+driver_count$Patients <- ifelse(driver_count$Var2 == "Balanced", 
+                                driver_count$Freq / sum(driver_count$Freq[driver_count$Var2 == "Balanced"]),
+                                driver_count$Freq / sum(driver_count$Freq[driver_count$Var2 == "CNV"]))
+driver_count$Var1 <- factor(driver_count$Var1, levels = c("None",  "Direct" , "Both", "Indirect"))
+
+print(driver_count)
+
+Cohorts_indirect_drivers <- ggplot(driver_count, aes(x = Var2, y = Patients, fill = Var1)) + geom_bar(stat = "identity", col = "black", lwd = 0.3, width = 0.8) +
+     scale_y_continuous(expand = c(0,0), limits = c(0,1.05), labels = scales::percent) + 
+   scale_fill_manual(values = c("Direct" = "#E41A1C", "Indirect" = "#377EB8", "Both"="#FFD300", "None" = "lightgrey")) + 
+   theme_classic(base_size = 8) + 
+  theme(panel.grid.major.y = element_line(colour = "lightgray", size = 0.3), 
+        panel.grid.minor.y = element_blank(),
+        strip.background = element_rect(fill="gray", size = 0.5),
+        strip.text = element_text(size = 6, face = "bold"),
+        panel.border = element_rect(colour = "black", fill = NA, size = 0.5),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.text.y = element_text( size = 5),
+        axis.title = element_text(size = 6),
+        legend.key.size = unit(0.7, "line"), legend.margin = margin(0,0,0,0), legend.title = element_text(size = 6)) +
+  labs(y = "Individuals (% of total)", x = "Cohort", fill = "Effect on\nT1/T2 Drivers")
+
+Cohorts_indirect_drivers
+
+if(export_figures == TRUE){
+  pdf(file = paste(Output_folder, "4B_Cohorts_indirect_drivers.pdf", sep = ""), width = 1.5, height = 1.5, pointsize = 9, family = "ArialMT")
+  print(Cohorts_indirect_drivers)
+  dev.off()
+}
+
+
+```
+\newpage
+## Figure S7e: Missed and new drivers Balanced/DGAP
+Next we want to determine which drivers are missed in the balanced/dgap cohort
+
+```{r, warning = F, echo=F}
+
+Drivers_DGAP <- Genes_SVs_DGAP[which(Genes_SVs_DGAP$Classification %in% c("T1", "T2") | Genes_SVs_DGAP$Previous_classification != "Benign"),]
+
+Drivers_DGAP$Comparison <- ifelse(Drivers_DGAP$Previous_classification != "Benign" & Drivers_DGAP$Classification %in% c("T1","T2"), "Similar", "Missed") 
+
+Drivers_DGAP$Comparison[which(Drivers_DGAP$Previous_classification == "Benign" & Drivers_DGAP$Classification %in% c("T1", "T2"))]  <- "New"
+
+# Not T1/T2
+summary(factor(Drivers_DGAP$Comparison))
+
+summary(factor(Drivers_DGAP$Classification)[Drivers_DGAP$Comparison == "Missed"])
+
+Missed_drivers <- Drivers_DGAP[which(Drivers_DGAP$Comparison == "Missed"),]
+
+Missed_drivers$Reason <- ifelse(Missed_drivers$Inheritance == "AR" | Missed_drivers== "XR", "Recessive", "Low\nPhenomatch" )
+Missed_drivers$Reason <- ifelse(is.na(Missed_drivers$HPO_Terms), "No HPO", Missed_drivers$Reason )
+
+Missed_drivers$Reason <- ifelse(Missed_drivers$Support == "Weak" & Missed_drivers$Phenotype_association == "Medium", "Weak support", Missed_drivers$Reason )
+
+summary(factor(Missed_drivers$Reason))
+
+print("Percentage missed drivers due to low phenomatch")
+print(length(which(Missed_drivers$Reason == "Low\nPhenomatch")) / nrow(Missed_drivers ))
+
+print("Percentage missed drivers due to no HPO terms")
+print(length(which(Missed_drivers$Reason == "No HPO")) / nrow(Missed_drivers ))
+
+
+Missed_driver_reasons <- data.frame(table(Missed_drivers$Reason))
+Missed_driver_reasons$Fraction <- Missed_driver_reasons$Freq / sum(Missed_driver_reasons$Freq)
+Missed_driver_reasons$ymax <- cumsum(Missed_driver_reasons$Fraction)
+Missed_driver_reasons$ymin <- c(0, head(Missed_driver_reasons$ymax, n = -1))  
+
+Missed_driver_plot <- ggplot(Missed_driver_reasons, aes(fill = Var1, ymax = ymax, ymin= ymin, xmax = 4, xmin = 2.5)) + 
+  geom_rect(col = "white", lwd = 1) + 
+  geom_text(inherit.aes = F,
+            x=0,
+            y=0, aes(label = "Previous drivers\nnot classified\nas T1/T2"), size = 2)  +
+  geom_text(aes(y = (ymin+ymax)/2, x = 3.25,  label = Freq), size = 2) +
+  geom_text(aes(y = (ymin+ymax)/2, x = 5.5,  label = Var1), size = 2) +
+  coord_polar(theta="y") +
+  # scale_fill_manual(values = c("Direct" = "#E41A1C", "Indirect" = "#377EB8", "Both"="#FFD300", "None" = "lightgrey")) + 
+
+  xlim(c(0,5.5)) +
+  theme_void(base_size = 6) +
+  theme(legend.position = "none")
+Missed_driver_plot
+#Effects_drivers_plot
+if(export_figures == TRUE){
+  pdf(file = paste(Output_folder, "S7D_Missed_drivers_DGAP.pdf", sep = ""), width = 1.8, height = 1.8, family = "ArialMT", pointsize = 6)
+  print(Missed_driver_plot)
+  dev.off()
+}
+
+# New candidate drivers
+
+# New drivers in the DGAP cohort -->
+Genes_SVs_new_drivers <- Genes_SVs_DGAP[which(Genes_SVs_DGAP$Previous_classification == "Benign" & Genes_SVs_DGAP$Classification %in% c("T1", "T2")),]
+Genes_SVs_new_drivers$Contribution <- Genes_SVs_new_drivers$Phenomatches_high/Genes_SVs_new_drivers$HPO_Patient 
+Genes_SVs_new_drivers <- Genes_SVs_DGAP[which(Genes_SVs_DGAP$Previous_classification == "Benign" & Genes_SVs_DGAP$Classification %in% c("T1", "T2")),] 
+Genes_SVs_new_drivers$Contribution <- Genes_SVs_new_drivers$Phenomatches_high/Genes_SVs_new_drivers$HPO_Patient 
+ Genes_SVs_new_drivers$Effect <- ifelse(Genes_SVs_new_drivers$SV_type == "Flanking", "Indirect", "Direct") 
+ Genes_SVs_new_drivers$Gene_ID  <- factor(Genes_SVs_new_drivers$Gene_ID, levels = Genes_SVs_new_drivers$Gene_ID[order(Genes_SVs_new_drivers$Contribution, decreasing = F)]) 
+
+ Genes_SVs_new_drivers$Block <- 2 
+ Genes_SVs_new_drivers$Block[1:ceiling(nrow(Genes_SVs_new_drivers) / 2 )] <- 1 
+Genes_SVs_new_drivers$Phenomatches_high[Genes_SVs_new_drivers$HPO_Patient < 4] <- Genes_SVs_new_drivers$Phenomatches_low[Genes_SVs_new_drivers$HPO_Patient < 4]
+ new_left <- ggplot(Genes_SVs_new_drivers[Genes_SVs_new_drivers$Block == 1,], aes(x = Gene_ID, y = Phenomatches_high/HPO_Patient, fill = Effect, alpha = Support)) + geom_bar(stat = "identity") +   
+   facet_grid(Patient ~ ., switch="y", scales = "free", space = "free") +  
+   coord_flip(ylim = c(0,1), expand = c(0,0)) + theme_bw(base_size = 8) + 
+   scale_x_discrete(breaks = Genes_SVs_new_drivers$Gene_ID, labels = Genes_SVs_new_drivers$hgnc_symbol) + 
+   scale_fill_manual(values = c(  "#E41A1C","#377EB8")) + 
+   scale_alpha_discrete(range = c(1, 0.6)) + 
+   theme(strip.text.y = element_text(angle = 180), strip.placement = "outside", 
+         panel.grid.major.x = element_line(colour = "gray", size = 0.3),  
+         panel.grid.minor.x = element_blank(), 
+         panel.grid.major.y = element_blank(), 
+         axis.text.y = element_text(face = "italic"), legend.position="none") + 
+   labs(y = "Relative contribution to phenotype",x = "Candidate drivers per patient") 
+ new_right <- ggplot(Genes_SVs_new_drivers[Genes_SVs_new_drivers$Block == 2,], aes(x = Gene_ID, y = Phenomatches_high/HPO_Patient, fill = Effect, alpha = Support)) + geom_bar(stat = "identity") +   
+   facet_grid(Patient ~ ., switch="y", scales = "free", space = "free") +  
+   coord_flip(ylim = c(0,1), expand = c(0,0)) + theme_bw(base_size = 8) + 
+   scale_x_discrete(breaks = Genes_SVs_new_drivers$Gene_ID, labels = Genes_SVs_new_drivers$hgnc_symbol) + 
+   scale_fill_manual(values = c(  "#E41A1C","#377EB8")) + 
+   scale_alpha_discrete(range = c(1, 0.6)) + 
+   theme(strip.text.y = element_text(angle = 180), strip.placement = "outside", 
+         panel.grid.major.x = element_line(colour = "gray", size = 0.3), 
+         panel.grid.minor.x = element_blank(), 
+         panel.grid.major.y = element_blank(), 
+         axis.text.y = element_text(face = "italic"), legend.position="none") + 
+   labs(y = "Relative contribution to phenotype",x = "Candidate drivers per patient") 
+
+ library(gridExtra) 
+
+ if(export_figures == TRUE){ 
+
+   pdf(file = paste(Output_folder, "S8_New_drivers_DGAP.pdf", sep = ""), width = 4.72, height = 7, family = "ArialMT", pointsize = 6) 
+   print(grid.arrange(new_left, new_right, nrow = 1)) 
+   dev.off() 
+ } 
+
+```
+
+# Missed and new drivers Balanced/DGAP
+
+Previously classified patho CNVs without drivers
+```{r, warning = F, echo=F}
+
+print("Number of patients with CNVs previously classified as VUS in CNV cohort:")
+nrow(all_diagnoses2[which(all_diagnoses2$Previous_diagnosis == "VUS" & all_diagnoses2$Cohort == "CNV"),])
+
+print("Number of patients with CNVs previously classified as VUS and T1/T2 drivers")
+nrow(all_diagnoses2[which(all_diagnoses2$Previous_diagnosis == "VUS" & all_diagnoses2$Cohort == "CNV" & all_diagnoses2$Strongest_driver %in% c("T1", "T2")),])
+
+
+print("Number of patients with CNVs previously classified as Pathogenic, but without T1/T2 drivers")
+nrow(all_diagnoses2[which(all_diagnoses2$Previous_diagnosis == "Pathogenic" & all_diagnoses2$Cohort == "CNV" & all_diagnoses2$Strongest_driver != "T1" & all_diagnoses2$Strongest_driver != "T2"),]) / nrow(all_diagnoses2[which(all_diagnoses2$Previous_diagnosis == "Pathogenic" & all_diagnoses2$Cohort == "CNV"),])
+
+
+
+```
+
+
+# Diagnoses
+
+
+
+
+```{r, warning = F, echo=F}
+
+ggplot(all_diagnoses2, aes(x = Cohort, fill = Diagnosis)) + geom_bar(stat = "count", position = "fill")
+
+direct_driver_summary <- patient_summary(genes_svs = Genes_SVs_DGAP[which(Genes_SVs_DGAP$SV_type %in% c("Deletion", "Duplication", "Truncation", "Insertion")),],
+                                  phenomatch_output_folder = paste(project_folder, "Results/Integration/DGAP/Phenomatch/", sep = ""),
+                                  phenomatch_threshold = 4, conclusions = c("Partially", "Largely"),
+                                  conclusion_thresholds = c(0.25, 0.75))
+print(summary(factor(direct_driver_summary$Conclusion)))
+
+
+all_diagnoses2$Comparison <- ifelse(all_diagnoses2$Previous_classification == "VUS" & all_diagnoses2$Diagnosis != "VUS", "New", "Similar")
+all_diagnoses2$Comparison <- ifelse(all_diagnoses2$Previous_classification != "VUS" & all_diagnoses2$Diagnosis == "VUS", "Missed", all_diagnoses2$Comparison)
+all_diagnoses2$Comparison <- ifelse(all_diagnoses2$Previous_classification == "VUS" & all_diagnoses2$Diagnosis == "VUS", "VUS", all_diagnoses2$Comparison)
+
+```
+
+

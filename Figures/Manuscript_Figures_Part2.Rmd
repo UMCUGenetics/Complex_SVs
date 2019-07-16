@@ -1,0 +1,698 @@
+---
+title: "Prioritization of candidate driver genes in patients with de novo genomic rearrangements to improve molecular diagnosis"
+output: pdf_document
+frontsize: 11pt
+---
+
+```{r setup, echo = F}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.width=2.5, fig.height=2.5) 
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", 
+         paste0("\\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+
+library(scales) 
+library(ggplot2)
+library(reshape2)
+
+```
+
+### Primary settings 
+
+Input Data: 
+
+```{r, warning = F, size="small"}
+### Add the path to the project folder and output folder here:
+Project_folder <- ""
+Output_folder <- paste(Project_folder, "Results/Figures_raw/", sep = "")
+Output_folder <- ""
+Export_figures <- TRUE
+source(paste(Project_folder,"Scripts/Integration/Phenotype_functions.R", sep =""))
+Genes_SVs <- read.delim(paste(Project_folder, "/Results/Integration/MP/Genes_SVs.txt", sep = ""), header = T, stringsAsFactors = F)
+
+# The breakpoint junctions file should be .txt version (tab separated) version of Supplementary Table S2
+Junctions <- read.delim(paste(Project_folder, "/Data/SV/Denovo_junctions.txt", sep = ""), header = T, stringsAsFactors = F)
+
+Junctions <- read.delim(paste(Project_folder, "/Data/SV/Table_S2.txt", sep = ""), header = T, stringsAsFactors = F, fill = T) #May fail
+Patient_IDs <- Junctions[, c("ID", "Reference.ID" )]
+Patient_IDs <- Patient_IDs[which(Patient_IDs$ID != ""),]
+names(Patient_IDs) <- c("ID", "Patient")
+## S1.txt contains columns E to columns AH from the first and the final two rows of Supplementary Table S1.
+Phenotype_categories <- read.delim(paste(Project_folder, "Data/Manuscript/Sup_Tables/S1.txt", sep = ""), header = F, stringsAsFactors = F)
+
+Candidate_Drivers <- read.delim(paste(Project_folder,"/Results/Integration/MP/Driver_summary.txt", sep = ""), stringsAsFactors = F) 
+
+```
+\newpage
+
+## Figure S5C : Number of genes 
+
+First determine how many genes are located at or adjacent to the SV regions
+
+```{r, echo = F}
+
+Genes_SVs2 <- Genes_SVs
+# Each fragment of truncated gene is included separately, but should only be counted once per gene here. Remove the duplicated gene IDs.
+Genes_SVs2$ID2 <- paste(Genes_SVs2$Patient, Genes_SVs2$hgnc_symbol, sep = "_")
+Genes_SVs2 <- Genes_SVs2[!duplicated(Genes_SVs2$ID2),]
+
+# Abbreviate the SV types
+Genes_SVs2$SV <- Genes_SVs2$SV_type
+Genes_SVs2$SV[Genes_SVs2$SV == "Flanking_Inversion" | 
+          Genes_SVs2$SV == "Flanking_Normal"] <- "Flanking (2Mb)"
+Genes_SVs2$SV[Genes_SVs2$SV == "Normal"] <- "Intrachromosomal"
+Genes_SVs2$SV[Genes_SVs2$SV == "Inverted Duplication"] <- "Duplication"
+Genes_SVs2$SV[Genes_SVs2$SV == "Insertion"] <- "Duplication"
+
+Genes_SVs2$SV <- factor(Genes_SVs2$SV, 
+                    levels = c("Flanking (2Mb)", 
+                               "Intrachromosomal",
+                               "Inversion", 
+                               "Duplication", 
+                               "Deletion",
+                               "Truncation"))
+levels(Genes_SVs2$SV) <- list("FLANK"= "Flanking (2Mb)", 
+                                   "INTRA" = "Intrachromosomal",
+                          "INV" =  "Inversion", 
+                          "DUP" ="Duplication", 
+                          "DEL" = "Deletion",
+                          "TRUNC" = "Truncation")
+
+Genes_SVs2$Effect <- ifelse(Genes_SVs2$SV_type %in% c("Deletion", "Duplication", "Truncation", "Insertion"), "Direct", "Indirect")
+
+Gene_colors <- c("DEL" = "#E41A1C", 
+               "DUP" = "#377EB8", 
+               "INTRA" = "#4DAF4A", 
+               "INV" = "#984EA3", 
+               "TRUNC" = "#FF7F00",
+               "FLANK" = "#FFD300")
+
+Fig_S5A <- ggplot(Genes_SVs2, aes(x = SV, fill = SV)) + geom_bar(stat = "count", col = "black") + 
+  facet_grid(~Effect, scales = "free") +
+  scale_fill_manual(values = Gene_colors) + 
+  scale_y_continuous(expand = c(0,0), limits = c(0,2000)) + 
+  theme_classic(base_size = 8) + 
+  theme(panel.grid.major.y = element_line(colour = "lightgray", size = 0.3), 
+        panel.grid.minor.y = element_line(colour = "lightgray", size = 0.3),
+        strip.background = element_rect(fill="gray"),
+        strip.text = element_text(size = 8),
+        axis.text.x = element_text(angle = 60, hjust = 1),
+        legend.position = "none", text=element_text(family="Arial")) +
+  labs(y = "Genes (#)", x = "SV Category")
+Fig_S5A
+if(Export_figures == TRUE){
+  ggsave(filename = paste(Output_folder, "S1D_Genes_per_SVtype.pdf", sep = ""), height= 60, width= 55, units = "mm", device = cairo_pdf)
+}
+print("# Number of genes per SV type:")
+print(summary(factor(Genes_SVs2$SV)))
+print(summary(factor(Genes_SVs2$Effect)))
+
+
+# Distance drivers > svs
+Genes_SVs3 <- Genes_SVs2
+Genes_SVs3$Driver2 <- ifelse(Genes_SVs3$Driver %in% c("T1", "T2"), "T1/T2", as.character(Genes_SVs3$Driver))
+Genes_SVs3$Driver2 <- factor(Genes_SVs3$Driver2, levels = c("No","T3", "T1/T2"))
+Genes_SVs3$Distance_to_BP <- Genes_SVs3$Distance_to_BP / 1e6
+Distance_plot <- 
+  ggplot(data = Genes_SVs3[Genes_SVs3$Effect == "Indirect",], 
+   aes(x = Driver2, y = Distance_to_BP)) +  stat_boxplot(geom = "errorbar", width = 0.3, lwd = 0.4, color = c("#377EB8", "#FFD300","#E41A1C")) +      
+  geom_boxplot(lwd = 0.4, fill = "white", outlier.shape = NA) + geom_jitter( width = 0.25, size = 0.03, alpha = 0.5, col = "darkgray") +
+   geom_boxplot(lwd = 0.4, fill = NA, outlier.shape = NA, color = c("#377EB8", "#FFD300","#E41A1C")) +
+  theme_classic(base_size = 8) +
+   theme(panel.grid.major.y = element_line(colour = "lightgray", size = 0.3), 
+        panel.grid.minor.y = element_line(colour = "lightgray", size = 0.3),
+        strip.background = element_rect(fill="gray"),
+        strip.text = element_text(size = 8),
+        axis.text.x = element_text(angle = 60, hjust = 1),
+        legend.position = "none", text=element_text(family="Arial")) +
+  labs(y = "Distance gene-breakpoint (Mb)", x = "Candidate driver")
+
+Distance_plot
+if(Export_figures == TRUE){
+  ggsave(filename = paste(Output_folder, "S5B_Distance_to_bp.pdf", sep = ""), height= 60, width= 55, units = "mm", device = cairo_pdf)
+}
++ 
+   geom_hline(yintercept = 0, color = "black", lwd = 0.4) +
+   stat_boxplot(geom = "errorbar", width = 0.3, lwd = 0.4, 
+   color = c("#4DAF4A","#984EA3","#377EB8","#E41A1C","#FF7F00" )) +
+     geom_boxplot(lwd = 0.4, fill = "white", outlier.shape = NA, 
+     color = c("#4DAF4A","#984EA3","#377EB8","#E41A1C","#FF7F00" )) + 
+   geom_jitter( width = 0.25, 
+      aes(color = RNA_pvalue), size = 0.03, alpha = 0.5) +
+   geom_boxplot(lwd = 0.4, fill = NA, outlier.shape = NA, 
+     color = c("#4DAF4A","#984EA3","#377EB8","#E41A1C","#FF7F00" )) + 
+    annotate(geom = "text", x = 1:5, y = 3, 
+    label = summary(factor(RNA_SV$SV)), size = 2, fontface = 3) +
+    scale_colour_gradient(low = "red", 
+        high = "lightgray", limits = c(0, 0.05), breaks = c(0, 0.05, 0.1)) +
+    theme_classic(base_size = 8) +
+    scale_y_continuous(breaks = -5:5) +
+    theme(axis.text.x = element_text(angle = 65, hjust = 1, size = 6),
+         axis.text.y = element_text(size = 6),
+         panel.grid.major.y = element_line(colour = "lightgray", size = 0.2),
+         panel.grid.major.x = element_blank(),
+         panel.grid.minor.y = element_blank(),
+         panel.border = element_rect(colour = "black", fill = NA),
+         legend.position="none",
+         legend.key.size = unit(0.5,"line"),
+         legend.title = element_text(size = 5),
+         legend.text = element_text(size = 5),
+         legend.margin=margin(0,0,0,0)) +
+     coord_cartesian(ylim = c(-3,3)) + 
+     labs(y = "RNA Expression\n(Log2 foldchange)", x = "") 
+
+```
+
+## Figure 2b : Number of classified candidate drivers.
+
+```{r, echo = F}
+
+Genes_SVs2 <- Genes_SVs
+Genes_SVs2$Effect <- ifelse(Genes_SVs2$SV_type %in% c("Deletion", "Duplication", "Truncation", "Insertion"), "Direct", "Indirect")
+Genes_SVs2$Driver <- gsub(Genes_SVs2$Classification, pattern = "_driver", replacement = "")
+Genes_SVs2$Driver <- factor(Genes_SVs2$Driver, levels = c("No", "T3", "T2","T1"))
+
+# only count truncated genes once
+Genes_SVs2$ID2 <- paste(Genes_SVs2$Patient, Genes_SVs2$hgnc_symbol, sep = "_")
+Genes_SVs2 <- Genes_SVs2[!duplicated(Genes_SVs2$ID2),]
+
+Driver_colors <- c("T1" = "#E41A1C", 
+                   "T2" = "darkorange",
+               "T3" = "#FFD300",
+               "No" = "#377EB8")
+
+
+plot_drivers <- ggplot(Genes_SVs2[Genes_SVs2$Driver != "No",], aes(x = Effect, fill = Driver)) + geom_bar(stat = "count", col = "black", lwd = 0.3, width = 0.8) +
+  annotate(geom = "text", x = 1:2, y = 70, label = paste("n=",table(Genes_SVs2$Effect), sep = ""), size = 2, fontface = 3, color = "grey45") +
+  scale_fill_manual(values = Driver_colors) + 
+  theme_classic(base_size = 8) + 
+  theme(panel.grid.major.y = element_line(colour = "lightgray", size = 0.3), 
+        #axis.text.x = element_text(angle = 60, hjust = 1), 
+        legend.key.size = unit(0.5,"line"),
+        legend.margin = margin(0,0,0,0), legend.title = element_text(size = 6), axis.title = element_text(size= 6)) + 
+  scale_y_continuous(expand = c(0,0), limits = c(0,74)) + 
+  labs(y = "Candidate drivers (#)", x = "SV Effect", fill = "Driver\nClassification") 
+
+plot_drivers
+
+print("Number of candidate drivers")
+print(table(Genes_SVs2$Driver, Genes_SVs2$Effect))
+print(table(Genes_SVs2$Driver, Genes_SVs2$SV_type))
+
+if(Export_figures == TRUE){
+  ggsave(filename = paste(Output_folder, "2B_Number_Candidate_Drivers.pdf", sep = ""), height= 45, width= 45, units = "mm")
+}
+
+```
+
+\newpage
+## Figure 2d: RNA expression of candidate driver genes
+
+```{r, echo = F}
+RNA_SV <- Genes_SVs[, c("Gene_ID", 
+                          "Patient", 
+                          "hgnc_symbol",
+                          "SV_type", 
+                          "RNA_RPKM", 
+                          "RNA_Controls_RPKM", 
+                          "RNA_log2FoldChange", 
+                          "RNA_pvalue", 
+                          "RNA_padj", 
+                          "DDG2P", 
+                          "start_position2", 
+                          "end_position2", 
+                          "transcription_start_site", "Classification")]
+
+RNA_SV$SV <- RNA_SV$SV_Type
+RNA_SV$SV[RNA_SV$SV == "Flanking_Inversion" | 
+          RNA_SV$SV == "Flanking_Normal" |
+          RNA_SV$SV == "Normal" ] <- "Flanking (2Mb)"
+RNA_SV$SV[RNA_SV$SV == "Inverted Duplication"] <- "Duplication"
+RNA_SV$SV[RNA_SV$SV == "Insertion"] <- "Duplication"
+
+RNA_SV$SV <- factor(RNA_SV$SV, 
+                    levels = c("Flanking (2Mb)", 
+                               "Inversion", 
+                               "Duplication", 
+                               "Deletion",
+                               "Truncation"))
+
+expressed <- RNA_SV[which(RNA_SV$RNA_RPKM > 0.5 | RNA_SV$RNA_Controls_RPKM > 0.5),]
+not_expressed <- RNA_SV[!RNA_SV$Gene_ID %in% expressed$Gene_ID,]
+
+RNA_SV <- RNA_SV[which(RNA_SV$RNA_RPKM > 0.5 | RNA_SV$RNA_Controls_RPKM > 0.5),]
+
+levels(RNA_SV$SV) <- list("FLANK"= "Flanking (2Mb)", 
+                          "INV" =  "Inversion", 
+                          "DUP" ="Duplication", 
+                          "DEL" = "Deletion",
+                          "TRUNC" = "Truncation")
+
+SV_colors4 <- c("DEL" = "#E41A1C", 
+                "DUP" = "#377EB8", 
+                "FLANK" = "#4DAF4A", 
+                "INV" = "#984EA3", 
+                "TRUNC" = "#FF7F00")
+
+RNA_SV$RNA_padj[RNA_SV$RNA_padj > 0.05] <- NA
+
+Plot_RNA_SVs <- 
+  ggplot(data = RNA_SV, 
+   aes(x = RNA_SV$SV, y = RNA_log2FoldChange)) + 
+   geom_hline(yintercept = 0, color = "black", lwd = 0.4) +
+   stat_boxplot(geom = "errorbar", width = 0.3, lwd = 0.4, 
+   color = c("#4DAF4A","#984EA3","#377EB8","#E41A1C","#FF7F00" )) +
+     geom_boxplot(lwd = 0.4, fill = "white", outlier.shape = NA, 
+     color = c("#4DAF4A","#984EA3","#377EB8","#E41A1C","#FF7F00" )) + 
+   geom_jitter( width = 0.25, 
+      aes(color = RNA_pvalue), size = 0.03, alpha = 0.5) +
+   geom_boxplot(lwd = 0.4, fill = NA, outlier.shape = NA, 
+     color = c("#4DAF4A","#984EA3","#377EB8","#E41A1C","#FF7F00" )) + 
+    annotate(geom = "text", x = 1:5, y = 3, 
+    label = summary(factor(RNA_SV$SV)), size = 2, fontface = 3) +
+    scale_colour_gradient(low = "red", 
+        high = "lightgray", limits = c(0, 0.05), breaks = c(0, 0.05, 0.1)) +
+    theme_classic(base_size = 8) +
+    scale_y_continuous(breaks = -5:5) +
+    theme(axis.text.x = element_text(angle = 65, hjust = 1, size = 6),
+         axis.text.y = element_text(size = 6),
+         panel.grid.major.y = element_line(colour = "lightgray", size = 0.2),
+         panel.grid.major.x = element_blank(),
+         panel.grid.minor.y = element_blank(),
+         panel.border = element_rect(colour = "black", fill = NA),
+         legend.position="none",
+         legend.key.size = unit(0.5,"line"),
+         legend.title = element_text(size = 5),
+         legend.text = element_text(size = 5),
+         legend.margin=margin(0,0,0,0)) +
+     coord_cartesian(ylim = c(-3,3)) + 
+     labs(y = "RNA Expression\n(Log2 foldchange)", x = "") 
+
+Plot_RNA_SVs
+if(Export_figures == TRUE){
+  ggsave(filename = paste(Output_folder, "2D_RNA_expression_per_SV_type.pdf", sep = ""), height= 60, width= 50, units = "mm")
+}
+
+```
+
+## Figure S3A : expression of truncated fragments
+
+```{r, echo=F, warning = F}
+d_trunc <- RNA_SV[RNA_SV$SV_type == "Truncation", ]
+
+## Determine promoter and non-promoter fragments 
+d_trunc$promoterfragment <- NULL
+for(row in 1:nrow(d_trunc)){
+  if(d_trunc$start_position2[row] <= d_trunc$transcription_start_site[row] & d_trunc$end_position2[row] >= d_trunc$transcription_start_site[row]){
+    d_trunc$promoterfragment[row] <- "5'"}
+  else{d_trunc$promoterfragment[row] <- "3'"}
+}
+
+## Order data
+d_trunc$promoterfragment <- factor(d_trunc$promoterfragment, levels = c("5'", "3'"))
+
+## Function to label outliers
+library(dplyr)
+is_outlier <- function(x) {
+  return(x < quantile(x, 0.25) - 1.5 * IQR(x) | x > quantile(x, 0.75) + 1.5 * IQR(x))
+}
+
+## Remove NA data and plot with label for the outliers
+d_trunc_na <- d_trunc[complete.cases(d_trunc$RNA_log2FoldChange), ]
+Trun_frag <- d_trunc_na %>% group_by(promoterfragment) %>% mutate(outlier = ifelse(is_outlier(RNA_log2FoldChange), hgnc_symbol, NA)) %>% 
+                ggplot(., aes(x=promoterfragment, y=RNA_log2FoldChange, fill = promoterfragment)) + 
+                geom_hline(yintercept = 0, color = "black") +
+                stat_boxplot(geom = "errorbar", width = 0.3, lwd = 0.4) +
+                geom_boxplot(lwd = 0.4) + 
+                annotate(geom = "text", x = 1:2, y = 11.9, label = paste("n=",summary(factor(d_trunc$promoterfragment)), sep = ""), size = 3, family="Arial") +
+                scale_fill_manual(values = c("#E41A1C", "#377EB8")) +
+                geom_text(aes(label = outlier), na.rm = TRUE, hjust = 0.5, vjust =2, size = 2, family="Arial") +
+                theme_classic(base_size = 8) +
+                theme(axis.text.x = element_text(angle = 65, hjust = 1, size = 6),
+                      axis.text.y = element_text(size = 6),
+                      panel.grid.major.y = element_line(colour = "lightgray", size = 0.2),
+                      panel.grid.major.x = element_blank(),
+                      panel.grid.minor.y = element_blank(),
+                      panel.border = element_rect(colour = "black", fill = NA),
+                      legend.position="none",
+                      legend.key.size = unit(0.5,"line"),
+                      legend.title = element_text(size = 5),
+                      legend.text = element_text(size = 5),
+                      legend.margin=margin(0,0,0,0),
+                      text=element_text(family="Arial")) +
+                coord_cartesian(ylim = c(-5,12)) + labs(y = "RNA Expression\n(Log2 foldchange)", x = "") 
+
+Trun_frag
+if(Export_figures == TRUE){
+  ggsave(filename = paste(Output_folder, "S3A_RNA_Expression_Truncated_Fragments.pdf", sep = ""), height= 60, width= 50, units = "mm", device = cairo_pdf)
+}
+```
+
+Total genes per SV type
+```{r, echo=F, warning = F}
+print(summary(factor(Genes_SVs2$SV_type)))
+```
+
+Number of expressed genes per SV category (RPKM > 0.5 and/or RPKM Controls > 0.5)
+
+```{r, echo=F, warning = F}
+print(summary(factor(Genes_SVs2$SV_type[which(Genes_SVs2$RNA_RPKM > 0.5 | Genes_SVs2$RNA_Controls_RPKM > 0.5)])))
+
+```
+Number of differentially expressed genes per SV category (RPKM > 0.5 and/or RPKM Controls > 0.5, and pval < 0.05)
+
+Down (RNA_log2FoldChange < -0.5) and Up (RNA_log2FoldChange > 0.5)
+
+```{r, echo=F, warning = F}
+print(table(RNA_SV$SV[which(RNA_SV$RNA_pvalue < 0.05 & RNA_SV$RNA_log2FoldChange < -0.5)]))
+print(table(RNA_SV$SV[which(RNA_SV$RNA_pvalue < 0.05 & RNA_SV$RNA_log2FoldChange > 0.5)]))
+```
+
+Median log fold expression changes deleted and duplicated controls:
+```{r, echo=F, warning = F}
+print("Median log fold expression changes deleted genes (RPKM > 0.5):")
+print(2^median(RNA_SV$RNA_log2FoldChange[RNA_SV$SV == "DEL"]))
+print("Median log fold expression changes duplicated genes (RPKM > 0.5):")
+print(2^median(RNA_SV$RNA_log2FoldChange[RNA_SV$SV == "DUP"]))
+```
+
+Number of expressed candidate driver genes:
+```{r, echo=F, warning = F}
+table(Genes_SVs2$Classification[which(Genes_SVs2$RNA_RPKM > 0.5 | Genes_SVs2$RNA_Controls_RPKM > 0.5)], 
+      Genes_SVs2$Effect[which(Genes_SVs2$RNA_RPKM > 0.5 | Genes_SVs2$RNA_Controls_RPKM > 0.5)])
+
+```
+```{r, echo=F, warning = F}
+table(Genes_SVs2$Classification[which(Genes_SVs2$RNA_RPKM > 0.5 | Genes_SVs2$RNA_Controls_RPKM > 0.5)], 
+      Genes_SVs2$SV_type[which(Genes_SVs2$RNA_RPKM > 0.5 | Genes_SVs2$RNA_Controls_RPKM > 0.5)])
+
+```
+
+Number of candidate drivers with differentially reduced or increased expression:
+
+```{r, echo=F, warning = F}
+print("reduced expression:")
+table(RNA_SV$Classification[which(RNA_SV$RNA_pvalue < 0.05 & RNA_SV$RNA_log2FoldChange < -0.5)], 
+      RNA_SV$SV[which(RNA_SV$RNA_pvalue < 0.05& RNA_SV$RNA_log2FoldChange < -0.5)])
+RNA_SV$Gene_ID[which(RNA_SV$RNA_pvalue < 0.05 & RNA_SV$RNA_log2FoldChange < -0.5 & RNA_SV$Classification %in% c("T1", "T2") &  RNA_SV$SV %in% c("DEL", "DUP", "TRUNC"))]
+
+print("increased expression:")
+table(RNA_SV$Classification[which(RNA_SV$RNA_pvalue < 0.05 & RNA_SV$RNA_log2FoldChange > 0.5)], 
+      RNA_SV$SV[which(RNA_SV$RNA_pvalue < 0.05 & RNA_SV$RNA_log2FoldChange > 0.5)])
+RNA_SV$Gene_ID[which(RNA_SV$RNA_pvalue < 0.05 & RNA_SV$RNA_log2FoldChange > 0.5 & RNA_SV$Classification %in% c("T1", "T2") &  RNA_SV$SV %in% c("DEL", "DUP", "TRUNC"))]
+
+```
+
+\newpage 
+# Contribution of directly affected genes to phenotypes
+Number of directly affected candidate drivers (T1/T2) per individual:
+
+```{r, echo=F, warning = F}
+
+table(Genes_SVs2$Patient[which(Genes_SVs2$Classification %in% c("T1", "T2") & 
+                                 Genes_SVs2$SV_type %in% c("Deletion", "Duplication", "Truncation", "Insertion") & 
+                                 !duplicated(Genes_SVs2$ID2))])
+
+# Determine with how many HPO terms the directly affected driver genes are affected:
+direct_driver_summary <- patient_summary(genes_svs = Genes_SVs2[which(Genes_SVs2$SV_type %in% c("Deletion", "Duplication", "Truncation", "Insertion")),],
+                                  phenomatch_output_folder = paste(Project_folder, "Results/Integration/MP/Phenomatch/", sep = ""),
+                                  phenomatch_threshold = 4, conclusions = c("Partially", "Largely"),
+                                  conclusion_thresholds = c(0.2, 0.75))
+print(summary(factor(direct_driver_summary$Conclusion)))
+
+```
+# Indirectly affected genes 
+
+Number of patients without directly affected drivers:
+
+
+```{r, echo=F, warning = F}
+length(unique(Genes_SVs2$Patient)) - length(unique(Genes_SVs2$Patient[Genes_SVs2$Effect == "Direct" & Genes_SVs2$Classification %in% c("T1", "T2")]))
+```
+
+Association of genes adjacent to SVs with the phenotypes (not restricted to candidate driver genes)
+
+```{r, echo=F, warning = F}
+print(summary(factor(Genes_SVs2$Phenotype_association[which(Genes_SVs2$Effect == "Indirect")])))
+
+```
+Total number of expressed genes adjacent to the SVs:
+```{r, echo=F, warning = F}
+expressed_genes <- Genes_SVs2[which(Genes_SVs2$RNA_RPKM > 0.5 | Genes_SVs2$RNA_Controls_RPKM > 0.5),]
+
+nrow(expressed_genes[which(expressed_genes$Effect == "Indirect" & expressed_genes$Phenotype_association %in% c("Medium", "Strong")),])
+```
+Number of under and overexpressed genes associated with phenotype and located adjacent to the SVs:
+```{r, echo=F, warning = F}
+nrow(expressed_genes[which(expressed_genes$Effect == "Indirect" & expressed_genes$Phenotype_association %in% c("Medium", "Strong") & expressed_genes$RNA_pvalue < 0.05 &
+                        expressed_genes$RNA_log2FoldChange < -0.5),])
+nrow(expressed_genes[which(expressed_genes$Effect == "Indirect" & expressed_genes$Phenotype_association %in% c("Medium", "Strong") & expressed_genes$RNA_pvalue < 0.05 &
+                        expressed_genes$RNA_log2FoldChange > 0.5),])
+```
+
+Number of genes adjacent to SV classified as driver
+
+```{r, echo=F, warning = F}
+
+print(summary(factor(Genes_SVs2$Classification[which(Genes_SVs2$Effect == "Indirect")])))
+
+```
+
+Number of genes located within disrupted TADs (in > 50% of the cell types, at least 10% of the TAD width)
+
+```{r, echo=F, warning = F}
+print(summary(factor(Genes_SVs2$Classification[which(Genes_SVs2$Effect == "Indirect" & Genes_SVs2$Cell_Types_TAD_Disrupted > 50 & Genes_SVs2$Average_TAD_Loss > 10)])))
+```
+Number of patients with indirectly affected drivers:
+
+```{r, echo=F, warning = F}
+print(summary(factor(Genes_SVs2$Patient[which(Genes_SVs2$Effect == "Indirect" & Genes_SVs2$Classification %in% c("T1", "T2"))])))
+```
+
+---------------------------------
+## Total number of patients with conclusions 
+
+```{r, echo=F, warning=F}
+direct_driver_summary <- patient_summary(genes_svs = Genes_SVs2,
+                                  phenomatch_output_folder = paste(Project_folder, "Results/Integration/MP/Phenomatch/", sep = ""),
+                                  phenomatch_threshold = 4, conclusions = c("Partially", "Largely"),
+                                  conclusion_thresholds = c(0.2, 0.75))
+print(summary(factor(direct_driver_summary$Conclusion)))
+
+```
+----------------------------------
+
+## Total candidate drivers per patient
+
+```{r, echo=F, warning = F}
+
+# drivers per patient per studied gene at/adjacent to SVs
+Genes_per_patient <- data.frame(table(factor(Genes_SVs2$Patient)))
+names(Genes_per_patient) <- c("Patient", "Genes")
+Direct_drivers_per_patient <- data.frame(table(factor(Genes_SVs2$Patient)[which(Genes_SVs2$Classification %in% c("T1", "T2") & Genes_SVs2$Effect == "Direct")]))
+names(Direct_drivers_per_patient) <- c("Patient", "Direct")
+Indirect_drivers_per_patient <- data.frame(table(factor(Genes_SVs2$Patient)[which(Genes_SVs2$Classification %in% c("T1", "T2") & Genes_SVs2$Effect == "Indirect")]))
+names(Indirect_drivers_per_patient) <- c("Patient", "Indirect")
+
+Drivers_per_patient <- merge(Genes_per_patient, Direct_drivers_per_patient, by = "Patient", all.x = T)
+Drivers_per_patient <- merge(Drivers_per_patient, Indirect_drivers_per_patient, by = "Patient", all.x = T)
+
+Drivers_per_patient$Drivers <- Drivers_per_patient$Direct + Drivers_per_patient$Indirect
+
+Drivers_vs_Genes <- ggplot(Drivers_per_patient, aes(x = Genes, y = Drivers)) + 
+  geom_point(size = 1, shape = 21, fill = "#E41A1C") + 
+  coord_cartesian(xlim = c(0,300)) + 
+  theme_bw(base_size = 8) +
+  theme(panel.grid.major =  element_blank(), 
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill="gray"),
+        axis.title = element_text(size = 6),
+        legend.position = "none") +
+  labs(y = "T1/T2 Drivers per patient (#)", x = "Genes near SVs per patient (#)")
+Drivers_vs_Genes
+if(Export_figures == TRUE){
+  ggsave(filename = paste(Output_folder, "3B_Drivers_per_gene.pdf", sep = ""), height= 45, width= 45, units = "mm", useDingbats=FALSE)
+}
+
+Drivers_per_patient_m <- melt(Drivers_per_patient[,c("Patient","Direct", "Indirect")])
+Drivers_per_patient_m$Patient <- factor(Drivers_per_patient_m$Patient, 
+                                        levels = as.character(Drivers_per_patient$Patient[order(Drivers_per_patient$Drivers, decreasing = T)]))
+Drivers_per_patient_m$variable <- factor(Drivers_per_patient_m$variable, levels = c("Indirect", "Direct"))
+
+Drivers_per_patient_plot <- ggplot(Drivers_per_patient_m, aes(x = Patient, y = value, fill = variable)) +
+  geom_bar(stat = "identity", color = "black", lwd = 0.3, width = 0.8) +
+  labs(x = "Individual", y = "Candidate Driver Genes", fill = "Effect") + 
+  theme_classic(base_size = 8) + 
+  scale_fill_manual(values = c( "#377EB8", "#E41A1C")) +
+  scale_y_continuous(limits = c(0,7), expand = c(0,0)) +
+  theme(axis.text.x = element_text(angle = 65, hjust = 1, size = 6),
+         axis.text.y = element_text(size = 6),
+         panel.grid.major.y = element_line(colour = "lightgray", size = 0.2),
+         panel.grid.major.x = element_blank(),
+         panel.grid.minor.y = element_blank(),
+         panel.border = element_rect(colour = "black", fill = NA),
+         legend.key.size = unit(0.5,"line"),
+         legend.title = element_text(size = 5),
+         legend.text = element_text(size = 5),
+         legend.margin=margin(0,0,0,0))
+Drivers_per_patient_plot
+if(Export_figures == TRUE){
+  ggsave(filename = paste(Output_folder, "Number_Drivers_per_patient.pdf", sep = ""),height= 50, width= 90, units = "mm")
+}
+
+
+# Number of patients with direct, indirect, direct and indirect or no candidate drivers
+Drivers_per_patient$Driver_types <- ifelse(Drivers_per_patient$Indirect > 0, "Indirect", "Direct")
+
+Drivers_per_patient$Driver_types <- ifelse(Drivers_per_patient$Indirect > 0 & Drivers_per_patient$Direct > 0, "Both", Drivers_per_patient$Driver_types)
+
+Drivers_per_patient$Driver_types <- ifelse(Drivers_per_patient$Drivers == 0, "None", Drivers_per_patient$Driver_types)
+Drivers_per_patient$Driver_types <- factor(Drivers_per_patient$Driver_types, levels = c("Direct","Both","Indirect","None"))
+Driver_types_per_patient <- data.frame(table(Drivers_per_patient$Driver_types))
+Driver_types_per_patient$Fraction <- Driver_types_per_patient$Freq / sum(Driver_types_per_patient$Freq)
+Driver_types_per_patient$ymax <- cumsum(Driver_types_per_patient$Fraction)
+Driver_types_per_patient$ymin <- c(0, head(Driver_types_per_patient$ymax, n = -1))  
+
+Effects_drivers_plot <- ggplot(Driver_types_per_patient, aes(fill = Var1, ymax = ymax, ymin= ymin, xmax = 4.5, xmin = 2.5)) + 
+  geom_rect(col = "white", lwd = 1) + 
+  geom_text(inherit.aes = F,
+            x=0,
+            y=0, aes(label = "Types of\ndrivers per\nindividual"), size = 2)  + 
+  geom_text(aes(y = (ymin+ymax)/2, x = 3.5,  label = Freq), size = 2) +
+  geom_text(aes(y = (ymin+ymax)/2, x = 5.5,  label = Var1), size = 2) +
+  coord_polar(theta="y") +
+   scale_fill_manual(values = c("Direct" = "#E41A1C", "Indirect" = "#377EB8", "Both"="#FFD300", "None" = "lightgrey")) + 
+
+  xlim(c(0,5.5)) +
+  theme_void(base_size = 6) +
+  theme(legend.position = "none")
+
+#Effects_drivers_plot
+if(Export_figures == TRUE){
+  pdf(file = paste(Output_folder, "S5A_Effects_on_drivers.pdf", sep = ""), width = 1.7, height = 1.7, family = "ArialMT", pointsize = 6)
+  print(Effects_drivers_plot)
+  dev.off()
+}
+
+
+
+Drivers <- Genes_SVs2[which(Genes_SVs2$Classification %in% c("T1", "T2")),]
+Drivers$Contribution <- Drivers$Phenomatches_high/Drivers$HPO_Patient
+
+Drivers$Gene_ID  <- factor(Drivers$Gene_ID, levels = Drivers$Gene_ID[order(Drivers$Contribution, decreasing = F)])
+Drivers <- merge(Drivers, Patient_IDs, by = "Patient", all.x = T)
+Drivers$ID <- factor(Drivers$ID, levels = unique(Drivers$ID[order(as.numeric(gsub("P", Drivers$ID, replacement = "")))]))
+
+ggplot(Drivers, aes(x = Gene_ID, y = Phenomatches_high/HPO_Patient, fill = Effect, alpha = Support)) + geom_bar(stat = "identity") +  
+  facet_grid(ID ~ ., switch="y", scales = "free_y", space = "free") + 
+  coord_flip(ylim = c(0,1), expand = c(0,0)) + theme_bw(base_size = 8) +
+  scale_x_discrete(breaks = Drivers$Gene_ID, labels = Drivers$hgnc_symbol) +
+  scale_fill_manual(values = c(  "#E41A1C","#377EB8")) +
+  scale_alpha_discrete(range = c(1, 0.6)) +
+  theme(strip.text.y = element_text(angle = 180), strip.placement = "outside",
+        legend.key.size = unit(0.7, "line"),
+        panel.grid.major.x = element_line(colour = "gray", size = 0.3), 
+        axis.text.y = element_text(face = "italic"), text=element_text(family="Arial")) +
+  labs(y = "Relative contribution to phenotype",x = "Candidate drivers per patient")
+if(Export_figures == TRUE){
+  ggsave(filename = paste(Output_folder, "Drivers_per_patient.pdf", sep = ""), width = 110, height = 150, units = "mm", dpi = 300, device = cairo_pdf)
+}
+
+```
+
+Number of patients with more than one T1/T2 candidate driver:
+
+```{r, echo=F, warning = F}
+
+length(which(table(Drivers$Patient) > 1))
+
+```
+
+
+
+
+# Overall contribution of the candidate drivers to the phenotype
+```{r, echo = F}
+
+# Candidate_Drivers
+Mol_diagnoses <- data.frame(table(Candidate_Drivers$Conclusion))
+Mol_diagnoses$Fraction <- Mol_diagnoses$Freq / sum(Mol_diagnoses$Freq)
+Mol_diagnoses$ymax <- cumsum(Mol_diagnoses$Fraction)
+Mol_diagnoses$ymin <- c(0, head(Mol_diagnoses$ymax, n = -1))
+
+diagnosis_plot <- ggplot(Mol_diagnoses, aes(fill = Var1, ymax = ymax, ymin= ymin, xmax = 4, xmin = 2.2)) + 
+  geom_rect(col = "white", lwd = 1) + 
+  geom_text(inherit.aes = F,
+            x=0,
+            y=0, aes(label = "Molecular\nDiagnoses"),  size = 2, fontface = "bold")  + 
+  geom_text(aes(y = (ymin+ymax)/2, x = 3.1,  label = Freq), size = 2, col = "white", fontface = "bold") +
+  geom_text(aes(y = (ymin+ymax)/2, x = 5,  label = Var1), size = 2) +
+  coord_polar(theta="y") +
+  scale_fill_manual(values = c("Largely" = "#E41A1C", "Partially"= "#FF7F00", "VUS" = "#FFD300")) + 
+  xlim(c(0,5)) +
+  theme_void(base_size = 6) +
+  theme(legend.position = "none")
+
+if(Export_figures == TRUE){
+  pdf(file = paste(Output_folder, "3A_Molecular_Diagnoses.pdf", sep = ""), width = 1.7, height = 1.7, family = "ArialMT", pointsize = 6)
+  print(diagnosis_plot)
+  dev.off()
+}
+
+
+```
+
+## Example of multigenic effects: Individual P25/16085
+
+
+```{r, echo = F}
+# Only select the T1/T2 drivers
+Drivers_P25 <- Drivers[Drivers$Patient == "16085",]
+
+print("Number of genes within 10 Mb deletion on chr6")
+nrow(Genes_SVs[which(Genes_SVs$chromosome_name == 6 & Genes_SVs$SV_type == "Deletion" & Genes_SVs$Patient == 16085),])
+
+# Read the phenomatch data
+phenomatch_file_16085 <- paste(Project_folder, "Results/Integration/MP/Phenomatch/Phenomatch_16085.txt", sep = "")
+phenomatches_16085 <- read.delim(phenomatch_file_16085, check.names = F, stringsAsFactors = F)
+phenomatches_16085 <- phenomatches_16085[which(phenomatches_16085$hgnc_symbol %in% Drivers_P25$hgnc_symbol),]
+phenomatches_16085[,2:ncol(phenomatches_16085)] <- round(phenomatches_16085[,2:ncol(phenomatches_16085)], 0)
+names(phenomatches_16085)[names(phenomatches_16085) == "HP:0011645"] <- "Aneurysm of the aortic sinus" # one hpo ID was not correctly translated to a clinical description
+
+phenomatches_16085_m <- melt(phenomatches_16085)
+phenomatches_16085_m$Color_score <- 0
+phenomatches_16085_m$Color_score[phenomatches_16085_m$value >= 5] <- phenomatches_16085_m$value[phenomatches_16085_m$value >= 5]*2
+phenomatches_16085_m$Color_score[phenomatches_16085_m$Color_score > 40] <- 40
+phenomatches_16085_m$hgnc_symbol <- factor(phenomatches_16085_m$hgnc_symbol, 
+                                           levels = unique(phenomatches_16085_m$hgnc_symbol[order(phenomatches_16085_m$value[phenomatches_16085_m$variable == "phenoMatchScore"])]))
+
+data_table <- ggplot(phenomatches_16085_m, aes(x = variable, y = hgnc_symbol, fill = Color_score, label = value)) + 
+    geom_tile(lwd = 0.3, colour  = "black") +
+  geom_text(size = 2, data = phenomatches_16085_m, aes(label = value)) + 
+  scale_fill_gradient(low = "white", high = "#e41a1c", limits=c(0,40), na.value = "gray") +
+    scale_x_discrete(position = "top") + 
+    theme_minimal(base_size = 7) + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 0), 
+          axis.title =element_blank(),
+          axis.text.y = element_text(face = "italic"),
+          strip.background = element_blank(),strip.text.x = element_blank(),
+          panel.grid.major = element_line(colour = "black"),
+          legend.position = "none") 
+
+print(data_table)
+
+if(Export_figures == TRUE){
+  pdf(file = paste(Output_folder, "3C_Phenomatches_16085.pdf", sep = ""), width = 4, height = 1.8, family = "ArialMT", pointsize = 6)
+  print(data_table)
+  dev.off()
+}
+
+
+
+
+```
+
+
