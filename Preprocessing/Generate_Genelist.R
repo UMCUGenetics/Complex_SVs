@@ -29,6 +29,10 @@ redin_file <- paste(input_folder, "Phenotypes/Redin_Gene_Annotation.txt", sep = 
 # haploinsufficiency indices can be downloaded from: https://decipher.sanger.ac.uk/files/downloads/HI_Predictions_Version3.bed.gz
 haploinsufficiency_file <- paste(input_folder, "Phenotypes/HI_Predictions_Version3.bed", sep = "")
 
+# ClinGen dosage sensitivity files (can be downloaded from https://www.ncbi.nlm.nih.gov/projects/dbvar/clingen/ (go to ftp))
+CG_haploinsufficiency_file <- paste(input_folder, "Phenotypes/ClinGen_haploinsufficiency_gene_GRCh37.bed", sep = "")
+CG_triplosensitivity_file <- paste(input_folder, "Phenotypes/ClinGen_triplosensitivity_gene_GRCh37.bed", sep = "")
+
 # "curated list of genes reported to be associated with developmental disorders", downloaded from: https://decipher.sanger.ac.uk/about#downloads/data
 DDG2P_file <- paste(input_folder, "Phenotypes/DDD/DDG2P_19_2_2019.csv", sep = "")
 
@@ -45,7 +49,7 @@ print("# Obtaining gene information from grch37.ensembl.org using biomaRt")
 filters <- listFilters(ensembl_hg19)
 attributes <- listAttributes(ensembl_hg19)
 
-All_genes <- getBM(attributes = c("ensembl_gene_id","hgnc_symbol", "hgnc_id", "entrezgene","chromosome_name", "start_position", "end_position", 
+All_genes <- getBM(attributes = c("ensembl_gene_id","hgnc_symbol", "hgnc_id", "entrezgene_id","chromosome_name", "start_position", "end_position", 
                                   "strand"), 
                    filters = c("chromosome_name"), values = chromosomes, mart = ensembl_hg19)
 
@@ -127,6 +131,36 @@ if(file.exists(haploinsufficiency_file)){
   genes_phenotype$HI <- NA
 }
 
+# Add ClinGen dosage sensitivity scores
+if(file.exists(CG_haploinsufficiency_file) & file.exists(CG_triplosensitivity_file) == TRUE){
+  
+  CG_HI <- read.delim(CG_haploinsufficiency_file, skip = 1, header = F, stringsAsFactors = F)
+  names(CG_HI) <- c("chr", "start", "end", "hgnc_symbol", "CG_HI")
+  CG_HI <- merge(CG_HI, genes_phenotype[,c("hgnc_symbol", "ensembl_gene_id")], all.x = T)
+  # Some genes in the clinvar dataset have different names corresponding to the new hgnc symbols:
+  for(gene in CG_HI$hgnc_symbol[is.na(CG_HI$ensembl_gene_id)]){
+    if(gene %in% genes_phenotype$hgnc_symbol_new == TRUE){
+      CG_HI$ensembl_gene_id[which(CG_HI$hgnc_symbol == gene)] <- genes_phenotype$ensembl_gene_id[which(genes_phenotype$hgnc_symbol_new == gene)]
+    }
+  }
+  CG_TS <- read.delim(CG_triplosensitivity_file, skip = 1, header = F, stringsAsFactors = F)
+  names(CG_TS) <- c("chr", "start", "end", "hgnc_symbol", "CG_TS")
+  CG_TS$CG_TS[which(CG_TS$CG_TS == "Not yet evaluated")] <- NA
+  CG_TS <- merge(CG_TS, genes_phenotype[,c("hgnc_symbol", "ensembl_gene_id")], all.x = T)
+  
+  for(gene in CG_TS$hgnc_symbol[is.na(CG_TS$ensembl_gene_id)]){
+    if(gene %in% genes_phenotype$hgnc_symbol_new == TRUE){
+      CG_TS$ensembl_gene_id[which(CG_TS$hgnc_symbol == gene)] <- genes_phenotype$ensembl_gene_id[which(genes_phenotype$hgnc_symbol_new == gene)]
+    }
+  }
+  genes_phenotype <- merge(genes_phenotype, CG_HI[!is.na(CG_HI$ensembl_gene_id) & !duplicated(CG_HI$ensembl_gene_id),c("ensembl_gene_id","CG_HI")], by =  "ensembl_gene_id", all.x = T)
+  genes_phenotype <- merge(genes_phenotype, CG_TS[!is.na(CG_TS$ensembl_gene_id) & !duplicated(CG_TS$ensembl_gene_id),c("ensembl_gene_id","CG_TS")], by =  "ensembl_gene_id", all.x = T)
+} else {
+  print(paste("# Error! ClinGen dosage sensitivity file(s) not found: ", CG_haploinsufficiency_file, " and/or ", CG_triplosensitivity_file ,sep = ""))
+  genes_phenotype$CG_HI <- NA
+  genes_phenotype$CG_TS <- NA
+}
+
 if(file.exists(DDG2P_file)){
   DDG2P <- read.csv(DDG2P_file, check.names = F)
   names(DDG2P)[names(DDG2P) == "gene symbol"] <- "hgnc_symbol"
@@ -143,18 +177,18 @@ if(file.exists(DDG2P_file)){
 if(file.exists(HPO_file)){
   # Read the HPO data:
   HPO_raw <- read.delim(HPO_file, skip = 1, header = F)
-  names(HPO_raw) <- c("entrezgene", "Entrez_gene_name", "HPO_Term", "HPO_Term_ID")
-  HPO_raw$entrezgene <- factor(HPO_raw$entrezgene)
+  names(HPO_raw) <- c("entrezgene_id", "Entrez_gene_name", "HPO_Term", "HPO_Term_ID")
+  HPO_raw$entrezgene_id <- factor(HPO_raw$entrezgene_id)
   
   # Each HPO term for each gene is on a seperate row. Merge and count all HPO terms per gene
   all_HPO <- data.frame()
-  for(gene in levels(HPO_raw$entrezgene)){
-    gene_HPO <- HPO_raw[HPO_raw$entrezgene == gene,]
+  for(gene in levels(HPO_raw$entrezgene_id)){
+    gene_HPO <- HPO_raw[HPO_raw$entrezgene_id == gene,]
     Number_HPO_Terms_Gene <- nrow(gene_HPO)
     merged_HPO_term <- paste(gene_HPO$HPO_Term, collapse = ",")
     merged_HPO_term_ID <- paste(gene_HPO$HPO_Term_ID, collapse = ",")
     
-    gene <- data.frame(entrezgene = unique(gene_HPO$entrezgene), 
+    gene <- data.frame(entrezgene_id = unique(gene_HPO$entrezgene_id), 
                        Entrez_gene_name = unique(gene_HPO$Entrez_gene_name), 
                        HPO_Terms = merged_HPO_term, 
                        HPO_Term_IDs = merged_HPO_term_ID,
@@ -163,9 +197,9 @@ if(file.exists(HPO_file)){
     all_HPO <- rbind(all_HPO,gene)
   }
   # Add ensembl_gene_ids to the genes with HPO terms (not all genes have entrezgene ids):
-  HPO_ensembl <- getBM(attributes = c("ensembl_gene_id","entrezgene"), 
-                       filters = c("entrezgene"), values = all_HPO$entrezgene, mart = ensembl)
-  all_HPO2 <- merge(all_HPO, HPO_ensembl, by = "entrezgene", all.x = T)
+  HPO_ensembl <- getBM(attributes = c("ensembl_gene_id","entrezgene_id"), 
+                       filters = c("entrezgene_id"), values = all_HPO$entrezgene_id, mart = ensembl)
+  all_HPO2 <- merge(all_HPO, HPO_ensembl, by = "entrezgene_id", all.x = T)
   genes_phenotype <- merge(genes_phenotype, all_HPO2[,c("HPO_Terms","HPO_Term_IDs","Number_HPO_Terms_Gene","ensembl_gene_id")], by = "ensembl_gene_id", all.x = T)
   genes_phenotype$Number_HPO_Terms_Gene[is.na(genes_phenotype$Number_HPO_Terms_Gene)] <- 0
 } else {
@@ -258,12 +292,12 @@ genes_phenotype <- merge(genes_phenotype, inheritance_mode[,c("hgnc_symbol","Inh
 # Order the genelist. Only the first entry of each gene will be included in the final genelist. This will be the longest transcript:
 print("# Sorting the genelist")
 genes_ordered <- genes_phenotype[order(genes_phenotype$transcript_length, genes_phenotype$refseq_mrna, genes_phenotype$hgnc_symbol, 
-                                       genes_phenotype$entrezgene, decreasing = T),]
+                                       genes_phenotype$entrezgene_id, decreasing = T),]
 
 # Sort the columns:
-genes_ordered <- genes_ordered[,c("hgnc_symbol","hgnc_symbol_new","ensembl_gene_id","refseq_mrna","refseq_mrnas","entrezgene",
+genes_ordered <- genes_ordered[,c("hgnc_symbol","hgnc_symbol_new","ensembl_gene_id","refseq_mrna","refseq_mrnas","entrezgene_id",
                                   "chromosome_name","start_position","end_position","strand","transcription_start_site","transcript_start","transcript_end","transcript_length",
-                                  "pLI","RVIS","HI","DDG2P","OMIM", "HPO_Terms", "HPO_Term_IDs" , "Number_HPO_Terms_Gene","redin_score", "Inheritance")]
+                                  "pLI","RVIS","HI","CG_HI","CG_TS", "DDG2P","OMIM", "HPO_Terms", "HPO_Term_IDs" , "Number_HPO_Terms_Gene","redin_score", "Inheritance")]
 
 # Remove all the genes that do not have a hgnc_symbol:
 all_hgnc_genes <- genes_ordered[which(genes_ordered$hgnc_symbol != ""),]

@@ -1,6 +1,4 @@
-
-## REPLACE XXX WITH PATH TO INPUT DIRECTORY
-input_folder <- "XXX"
+# This script can be used to generate a genome browser-like overview of a breakpoint region
 
 breakpoint_plot <- function(conf = standard.conf,
                             patient,

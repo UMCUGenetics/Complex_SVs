@@ -1,7 +1,6 @@
-# @author: Judith Vlaar
-# @description: Merge bam files seq runs of same library prep 
+# @description: Merge bam files of multiple sequencing runs of same library prep 
 
-#### SAMPLES IN SEQ RUN NEED TO HAVE THE SAMPLE SAMPLE NAME 
+#### SAMPLES IN SEQ RUN NEED TO HAVE THE SAME SAMPLE NAME 
 
 import re
 import os

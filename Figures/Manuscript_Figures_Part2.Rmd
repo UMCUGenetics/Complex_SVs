@@ -34,10 +34,23 @@ source(paste(Project_folder,"Scripts/Integration/Phenotype_functions.R", sep =""
 Genes_SVs <- read.delim(paste(Project_folder, "/Results/Integration/MP/Genes_SVs.txt", sep = ""), header = T, stringsAsFactors = F)
 
 # The breakpoint junctions file should be .txt version (tab separated) version of Supplementary Table S2
-Junctions <- read.delim(paste(Project_folder, "/Data/SV/Denovo_junctions.txt", sep = ""), header = T, stringsAsFactors = F)
+Junctions <- read.delim(paste(Project_folder, "/Data/SV/Table_S2.txt", sep = ""), header = T, stringsAsFactors = F, fill = T)
+# Add the patient ID to each empty cell:
+while(length(ind <- which(Junctions$ID == "")) > 0){
+  Junctions$ID[ind] <- Junctions$ID[ind -1]
+}
+bkp_j <- Junctions
+Patients <- factor(bkp_j$ID)
 
-Junctions <- read.delim(paste(Project_folder, "/Data/SV/Table_S2.txt", sep = ""), header = T, stringsAsFactors = F, fill = T) #May fail
-Patient_IDs <- Junctions[, c("ID", "Reference.ID" )]
+bkp_j$ID <- reorder(bkp_j$ID, bkp_j$ID, FUN="length")
+bkp_j$ID  <- factor(bkp_j$ID, levels = rev(levels(bkp_j$ID)))
+bkp_j$Type <- as.character(bkp_j$Ori)
+simple <- levels(Patients)[table(Patients) < 4]
+bkp_j$Complexity <- ifelse(bkp_j$ID %in% simple, "Simple", "Complex")
+bkp_j$Complexity <- factor(bkp_j$Complexity, levels = c("Simple", "Complex"))
+names(bkp_j)[names(bkp_j) == "Reference_ID"] <- "Patient"
+
+Patient_IDs <- Junctions[, c("ID", "Reference_ID" )]
 Patient_IDs <- Patient_IDs[which(Patient_IDs$ID != ""),]
 names(Patient_IDs) <- c("ID", "Patient")
 ## S1.txt contains columns E to columns AH from the first and the final two rows of Supplementary Table S1.
@@ -113,8 +126,8 @@ print(summary(factor(Genes_SVs2$Effect)))
 
 # Distance drivers > svs
 Genes_SVs3 <- Genes_SVs2
-Genes_SVs3$Driver2 <- ifelse(Genes_SVs3$Driver %in% c("T1", "T2"), "T1/T2", as.character(Genes_SVs3$Driver))
-Genes_SVs3$Driver2 <- factor(Genes_SVs3$Driver2, levels = c("No","T3", "T1/T2"))
+Genes_SVs3$Driver2 <- ifelse(Genes_SVs3$Classification %in% c("T1", "T2"), "T1/T2", as.character(Genes_SVs3$Classification))
+Genes_SVs3$Driver2 <- factor(Genes_SVs3$Driver2, levels = c("No_driver","T3", "T1/T2"))
 Genes_SVs3$Distance_to_BP <- Genes_SVs3$Distance_to_BP / 1e6
 Distance_plot <- 
   ggplot(data = Genes_SVs3[Genes_SVs3$Effect == "Indirect",], 
@@ -132,38 +145,12 @@ Distance_plot <-
 
 Distance_plot
 if(Export_figures == TRUE){
-  ggsave(filename = paste(Output_folder, "S5B_Distance_to_bp.pdf", sep = ""), height= 60, width= 55, units = "mm", device = cairo_pdf)
+  ggsave(filename = paste(Output_folder, "S3f_Distance_to_bp.pdf", sep = ""), height= 60, width= 55, units = "mm", device = cairo_pdf)
 }
-+ 
-   geom_hline(yintercept = 0, color = "black", lwd = 0.4) +
-   stat_boxplot(geom = "errorbar", width = 0.3, lwd = 0.4, 
-   color = c("#4DAF4A","#984EA3","#377EB8","#E41A1C","#FF7F00" )) +
-     geom_boxplot(lwd = 0.4, fill = "white", outlier.shape = NA, 
-     color = c("#4DAF4A","#984EA3","#377EB8","#E41A1C","#FF7F00" )) + 
-   geom_jitter( width = 0.25, 
-      aes(color = RNA_pvalue), size = 0.03, alpha = 0.5) +
-   geom_boxplot(lwd = 0.4, fill = NA, outlier.shape = NA, 
-     color = c("#4DAF4A","#984EA3","#377EB8","#E41A1C","#FF7F00" )) + 
-    annotate(geom = "text", x = 1:5, y = 3, 
-    label = summary(factor(RNA_SV$SV)), size = 2, fontface = 3) +
-    scale_colour_gradient(low = "red", 
-        high = "lightgray", limits = c(0, 0.05), breaks = c(0, 0.05, 0.1)) +
-    theme_classic(base_size = 8) +
-    scale_y_continuous(breaks = -5:5) +
-    theme(axis.text.x = element_text(angle = 65, hjust = 1, size = 6),
-         axis.text.y = element_text(size = 6),
-         panel.grid.major.y = element_line(colour = "lightgray", size = 0.2),
-         panel.grid.major.x = element_blank(),
-         panel.grid.minor.y = element_blank(),
-         panel.border = element_rect(colour = "black", fill = NA),
-         legend.position="none",
-         legend.key.size = unit(0.5,"line"),
-         legend.title = element_text(size = 5),
-         legend.text = element_text(size = 5),
-         legend.margin=margin(0,0,0,0)) +
-     coord_cartesian(ylim = c(-3,3)) + 
-     labs(y = "RNA Expression\n(Log2 foldchange)", x = "") 
 
+# Statistics on distance drivers to breakpoints:
+aggregate(Genes_SVs3$Distance_to_BP[Genes_SVs3$Effect == "Indirect"]*1e6 ~ Genes_SVs3$Driver2[Genes_SVs3$Effect == "Indirect"], FUN = "summary")
+median(Genes_SVs3$Distance_to_BP[Genes_SVs3$Classification %in% c("T1", "T2", "T3") & Genes_SVs3$Effect == "Indirect"] *1e6)
 ```
 
 ## Figure 2b : Number of classified candidate drivers.
@@ -501,6 +488,9 @@ Drivers_per_patient <- merge(Genes_per_patient, Direct_drivers_per_patient, by =
 Drivers_per_patient <- merge(Drivers_per_patient, Indirect_drivers_per_patient, by = "Patient", all.x = T)
 
 Drivers_per_patient$Drivers <- Drivers_per_patient$Direct + Drivers_per_patient$Indirect
+Drivers_per_patient2 <- merge(Drivers_per_patient, bkp_j[,c("Patient", "Complexity")], by = "Patient", all.x = T)
+
+summary(factor(Junctions$ID))
 
 Drivers_vs_Genes <- ggplot(Drivers_per_patient, aes(x = Genes, y = Drivers)) + 
   geom_point(size = 1, shape = 21, fill = "#E41A1C") + 

@@ -32,8 +32,8 @@ Run_Phenomatch <- function(phenomatch_folder, # Path to the folder containing th
     if(file.exists(paste(phenomatch_folder,"bin/phenomatch.jar", sep = ""))){
       print(paste("Reading: ", HPO_genes_phenotype, sep = ""))
       HPO_raw <- read.delim(HPO_genes_phenotype, skip = 1, header = F)
-      names(HPO_raw) <- c("entrezgene", "Entrez_gene_name", "HPO_Term", "HPO_Term_ID")
-      HPO_raw$entrezgene <- factor(HPO_raw$entrezgene)
+      names(HPO_raw) <- c("entrezgene_id", "Entrez_gene_name", "HPO_Term", "HPO_Term_ID")
+      HPO_raw$entrezgene_id <- factor(HPO_raw$entrezgene_id)
       # This file should contain the HPO terms for each patient (should contain a "Patient" and "HPO" (containing HPO IDs) column)
       print(paste("Reading: ", HPO_patients_file, sep = ""))
       HPO_patients <- read.delim(HPO_patients_file)
@@ -175,12 +175,12 @@ Run_Phenomatch <- function(phenomatch_folder, # Path to the folder containing th
             # Phenomatch uses the genenames from HPO, which are in some cases not the same as the (old) hg19 HGNC symbols we use.
             # Therefore translate the phenomatch genenames to hg19 HGNC symbols:
             if(entrez_to_hgnc == TRUE){
-              entrez_ids <- HPO_raw[!duplicated(HPO_raw$entrezgene), c(1,2)]
-              names(entrez_ids) <- c("entrezgene", "gene_symbol")
+              entrez_ids <- HPO_raw[!duplicated(HPO_raw$entrezgene_id), c(1,2)]
+              names(entrez_ids) <- c("entrezgene_id", "gene_symbol")
               # add the entrezgene ids to phenomatch_overview
               phenomatch_overview <- merge(phenomatch_overview, entrez_ids, by = "gene_symbol", all.x = T)
               # add the hgnc_symbols from the genelist to the phenomatch_overview based on entrezgene ids
-              phenomatch_overview <- merge(phenomatch_overview, gene_information[,c("entrezgene", "hgnc_symbol")], by = "entrezgene", all.x = T)
+              phenomatch_overview <- merge(phenomatch_overview, gene_information[,c("entrezgene_id", "hgnc_symbol")], by = "entrezgene_id", all.x = T)
             }
             write.table(file = paste(output_folder, "Phenomatch_", patient, ".txt", sep = ""), x = phenomatch_overview[,c("hgnc_symbol", "phenoMatchScore", names(phenomatch_overview)[4:(ncol(phenomatch_overview)-1)])], row.names = F, sep = "\t", quote = F)
           }
@@ -202,7 +202,7 @@ Run_Phenomatch <- function(phenomatch_folder, # Path to the folder containing th
             #print(head(phenomatch_overview))
             
             if(generate_plot == TRUE){
-              phenomatch_overview_plot <- phenomatch_overview[,-which(names(phenomatch_overview) %in% c("entrezgene", "hgnc_symbol"))]
+              phenomatch_overview_plot <- phenomatch_overview[,-which(names(phenomatch_overview) %in% c("entrezgene_id", "hgnc_symbol"))]
               phenomatch_overview_melted <- melt(phenomatch_overview_plot, id.vars = "gene_symbol")
               phenomatch_overview_melted$value <- as.numeric(phenomatch_overview_melted$value)
               phenomatch_overview_melted$Score <- phenomatch_overview_melted$value
@@ -266,8 +266,8 @@ Link_HPO_Genes_to_Patients <- function(Genes = Genes_SVs,
   
   HPO_Patients <- read.delim(HPO_Terms_Patients, stringsAsFactors = F)
   HPO_Terms <- read.delim(HPO_file, skip = 1, header = F)
-  names(HPO_Terms) <- c("entrezgene", "Entrez_gene_name", "HPO_Term", "HPO_Term_ID")
-  HPO_Terms$entrezgene <- factor(HPO_Terms$entrezgene)
+  names(HPO_Terms) <- c("entrezgene_id", "Entrez_gene_name", "HPO_Term", "HPO_Term_ID")
+  HPO_Terms$entrezgene_id <- factor(HPO_Terms$entrezgene_id)
   Genes_SVs_HPO <- data.frame()
   
   for(Patient in Patients){
@@ -275,8 +275,8 @@ Link_HPO_Genes_to_Patients <- function(Genes = Genes_SVs,
     
     # Select the genes near SVs for the patient
     Genes_Patient <- Genes[which(Genes$Patient == Patient),]
-    Genes_Patient <- Genes_Patient[which(Genes_Patient$entrezgene != ""),]
-    Genes_Patient$entrezgene <- factor(Genes_Patient$entrezgene)
+    Genes_Patient <- Genes_Patient[which(Genes_Patient$entrezgene_id != ""),]
+    Genes_Patient$entrezgene_id <- factor(Genes_Patient$entrezgene_id)
     
     # Select the HPO terms of the patients
     HPO_Patient <- HPO_Patients[which(HPO_Patients$Patient == Patient),]

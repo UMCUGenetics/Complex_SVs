@@ -123,16 +123,18 @@ OMIM_terms <- list("Intellectual disability" = HPO_Terms_Patients$Patient[grep(x
              Seizure =  HPO_Terms_Patients$Patient[grep(x = HPO_Terms_Patients$HPO_ID, pattern = "HP:0000153|HP:0002123")])
 
 
-# The phenotypic score is based on the pLI, RVIS, HI (HapploInsufficiency) scores and the presence in OMIM and DD2GP. 
+# The phenotypic score is based on the pLI, RVIS, HI (HapploInsufficiency) / TS (triplosensitivity) scores and the presence in OMIM and DD2GP.
+# This score is also called "disease assocation score"
 Genes_SVs2$Phenotypic_score <- 0
 Genes_SVs2$Phenotypic_score <- ifelse(Genes_SVs2$pLI > 0.9 & !is.na(Genes_SVs2$pLI), Genes_SVs2$Phenotypic_score + 1, Genes_SVs2$Phenotypic_score)
 Genes_SVs2$Phenotypic_score <- ifelse(Genes_SVs2$RVIS < 10 & !is.na(Genes_SVs2$RVIS), Genes_SVs2$Phenotypic_score + 1, Genes_SVs2$Phenotypic_score)
-Genes_SVs2$Phenotypic_score <- ifelse(Genes_SVs2$HI < 10 & !is.na(Genes_SVs2$HI), Genes_SVs2$Phenotypic_score + 1, Genes_SVs2$Phenotypic_score)
 
+Genes_SVs2$Phenotypic_score[which(Genes_SVs2$HI < 10 | Genes_SVs2$CG_HI %in% c(1,2,3) | Genes_SVs2$CG_TS %in% c(1,2,3) == TRUE)] <- 
+  Genes_SVs2$Phenotypic_score[which(Genes_SVs2$HI < 10 | Genes_SVs2$CG_HI %in% c(1,2,3) | Genes_SVs2$CG_TS %in% c(1,2,3) == TRUE)]+1
 Genes_SVs2$Phenotypic_score <- ifelse(!is.na(Genes_SVs2$DDG2P), Genes_SVs2$Phenotypic_score + 1, Genes_SVs2$Phenotypic_score)
 Genes_SVs2$Phenotypic_score <- ifelse(!is.na(Genes_SVs2$OMIM) & Genes_SVs2$OMIM != "", Genes_SVs2$Phenotypic_score + 1, Genes_SVs2$Phenotypic_score)
 
-summary(Genes_SVs2$Phenotypic_score)
+summary(factor(Genes_SVs2$Phenotypic_score))
 
 ## Determine if the genes are not, weakly or strongly associated with the phenotype
 # Weak drivers are only minimally associated to the phenotype and are allowed to have a recessive label (in case the recessiveness is wrongly appointed)
@@ -315,7 +317,7 @@ for(patient in unique(Genes_SVs$Patient)){
 # Generate cohort overview table
 driver_summary <- patient_summary(genes_svs = Genes_SVs,
                                   phenomatch_output_folder = paste(output_folder, "Phenomatch/", sep = ""),
-                                  phenomatch_threshold = 3, conclusions = c("Partially", "Largely"),
+                                  phenomatch_threshold = 4, conclusions = c("Partially", "Largely"),
                                   conclusion_thresholds = c(0.20, 0.75))
 print(driver_summary[,c(1:8)])
 print(summary(factor(driver_summary$Conclusion)))

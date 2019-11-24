@@ -5,17 +5,23 @@
 # Fig S6: SOX9 example
 # Fig ??: FOXG1 example
 
+## Requirements
+# ggbio
+# diagram
+# reshape2
+# ggplot2
+
 #source("https://bioconductor.org/biocLite.R")
-#BiocInstaller::biocLite(c("diagram"))
+#BiocManager::install(c("ggbio", "diagram"))
 
 library(reshape2)
 
 ## Add path to input directory here:
 input_folder <- ""
-
-source( paste(input_folder, "Scripts/Visualization/Breakpoint_browser.R", sep = ""))
-source( paste(input_folder, "Scripts/Visualization/read_browser_data.R", sep = ""))
-source( paste(input_folder, "Scripts/Visualization/Plot_ideograms_derivative_chromosomes.R", sep = ""))
+input_folder <- "~/hpc/cog_bioinf/cuppen/project_data/Complex_svs/"
+source(paste(input_folder, "Scripts/Visualization/Breakpoint_browser.R", sep = ""))
+source(paste(input_folder, "Scripts/Visualization/read_browser_data.R", sep = ""))
+source(paste(input_folder, "Scripts/Visualization/Plot_ideograms_derivative_chromosomes.R", sep = ""))
 
 ## Add path to ini file here:
 ini_file <- ""
@@ -123,16 +129,16 @@ plot_phenomatch_small <- function(Patient,
   phenomatch_overview_melted$Score <- as.numeric(phenomatch_overview_melted$Score)
   
   phenomatch_overview_melted$grid <- ifelse(phenomatch_overview_melted$variable == "phenoMatchScore", "phenoMatchScore", "Phenomatch")
-  phenomatch_overview_melted$grid <- ifelse(phenomatch_overview_melted$variable == "Phenomatches", "phenoMatchScore", phenomatch_overview_melted$grid)
+  phenomatch_overview_melted$grid <- ifelse(phenomatch_overview_melted$variable == "Phenomatches_high", "phenoMatchScore", phenomatch_overview_melted$grid)
   phenomatch_overview_melted$grid <- ifelse(phenomatch_overview_melted$variable %in% c("pLI","RVIS","HI","DDG2P", "OMIM", "Inheritance"), "Other", phenomatch_overview_melted$grid)
   phenomatch_overview_melted$grid <- ifelse(phenomatch_overview_melted$variable == "Phenotypic_score", "Phenotypic_score", phenomatch_overview_melted$grid)
   
   phenomatch_overview_melted$grid <- factor(phenomatch_overview_melted$grid, levels = c("Phenomatch", "phenoMatchScore", "Other", "Phenotypic_score"))
   
   
-  phenomatch_overview_melted$Score[phenomatch_overview_melted$variable == "Phenomatches"] <- as.numeric(phenomatch_overview_melted$Score[phenomatch_overview_melted$variable == "Phenomatches"]) / (ncol(phenomatch_overview_2Mb)-2) * 30
-  phenomatch_overview_melted$value[phenomatch_overview_melted$variable == "Phenomatches"] <- 
-    paste(phenomatch_overview_melted$value[phenomatch_overview_melted$variable == "Phenomatches"], (ncol(phenomatch_overview_2Mb)-2), sep = "/")
+  phenomatch_overview_melted$Score[phenomatch_overview_melted$variable == "Phenomatches_high"] <- as.numeric(phenomatch_overview_melted$Score[phenomatch_overview_melted$variable == "Phenomatches_high"]) / (ncol(phenomatch_overview_2Mb)-2) * 30
+  phenomatch_overview_melted$value[phenomatch_overview_melted$variable == "Phenomatches_high"] <- 
+    paste(phenomatch_overview_melted$value[phenomatch_overview_melted$variable == "Phenomatches_high"], (ncol(phenomatch_overview_2Mb)-2), sep = "/")
   phenomatch_overview_melted$Score[phenomatch_overview_melted$variable == "pLI"] <- ifelse(phenomatch_overview_melted$Score[phenomatch_overview_melted$variable == "pLI"] > 0.5, 
                                                                                            (phenomatch_overview_melted$Score[phenomatch_overview_melted$variable == "pLI"])*30 ,0)
   
@@ -162,18 +168,19 @@ plot_phenomatch_small <- function(Patient,
   phenomatch_overview_melted$Score[phenomatch_overview_melted$variable == "Inheritance" &  phenomatch_overview_melted$value == "AD+AR"] <- 15
   phenomatch_overview_melted$Score[phenomatch_overview_melted$variable == "Inheritance" &  phenomatch_overview_melted$value == "AR"] <- 0
   
-    
   phenomatch_overview_melted$Score <- ifelse(phenomatch_overview_melted$Score > 30, 30, phenomatch_overview_melted$Score)
   
   phenomatch_overview_melted$value[phenomatch_overview_melted$variable != "DDG2P" & 
                                      phenomatch_overview_melted$variable != "Inheritance" & 
-                                     phenomatch_overview_melted$variable != "Phenomatches" &
+                                     phenomatch_overview_melted$variable != "Phenomatches_high" &
                                      phenomatch_overview_melted$variable != "OMIM"] <- round(as.numeric(phenomatch_overview_melted$value[phenomatch_overview_melted$variable != "DDG2P" & 
                                                                                                                                            phenomatch_overview_melted$variable != "Inheritance" & 
-                                                                                                                                           phenomatch_overview_melted$variable != "Phenomatches" &
+                                                                                                                                           phenomatch_overview_melted$variable != "Phenomatches_high" &
                                                                                                                                            phenomatch_overview_melted$variable != "OMIM"] ), 1)
   
   names(phenomatch_overview_melted) <- c("Gene", "Phenotype", "phenoMatchScore", "Score", "grid")
+  levels(phenomatch_overview_melted$Phenotype)[levels(phenomatch_overview_melted$Phenotype)  == "Phenotypic_score"] <- "Disease Asso-\nciationScore"
+  levels(phenomatch_overview_melted$Phenotype)[levels(phenomatch_overview_melted$Phenotype)  == "Phenomatches_high"] <- "Phenomatches"
   
   output_height <- nrow(phenomatch_overview) / 3 + 2
   

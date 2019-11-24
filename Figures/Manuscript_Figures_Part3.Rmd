@@ -21,7 +21,7 @@ library(reshape2)
 ### Add the path to the project folder and output folder here:
 project_folder <- ""
 source(paste(project_folder,"Scripts/Integration/Phenotype_functions.R", sep =""))
-Output_folder <- paste(project_folder, "Results/Figures_raw/", sep = "")
+Output_folder <- paste(project_folder, "Results/Figures_new/", sep = "")
 Output_folder <- ""
 export_figures <- TRUE
 ```
@@ -54,7 +54,7 @@ Junctions_DGAP <- read.delim(paste(project_folder,"Data/SV/DGAP_SV_junctions_fil
 Junctions_DGAP$Cohort <- "Balanced"
 # These patient were already included in the other cohort and were not studied here:
 exclude_patients <- c( "UTR2","UTR8","UTR22","DGAP122","DGAP127","DGAP133","DGAP137","DGAP139","DGAP143","DGAP154",
-                       "DGAP161','DGAP168','DGAP196","DGAP200","DGAP203","DGAP211","DGAP233","DGAP261","DGAP277","DGAP294")
+                       "DGAP161","DGAP168","DGAP196","DGAP200","DGAP203","DGAP211","DGAP233","DGAP261","DGAP277","DGAP294")
 Junctions_DGAP <- Junctions_DGAP[!Junctions_DGAP$Patient %in% exclude_patients,]
 
 # Supplementary table 8 (remove first 2 rows, save a tab-delimited text)
@@ -112,7 +112,7 @@ number_SVs_plot <- ggplot(data = All_junctions, aes(x = type, fill = type, alpha
         legend.key.size = unit(0.5,"line"),
         legend.title = element_text(size = 7),
         legend.margin=margin(t = 0, unit='cm')) +
-  scale_y_continuous(expand = c(0,0), limits = c(0,450)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0,425)) +
   scale_alpha_discrete(range = c(0.5, 1)) +
   labs(y = "Breakpoint junctions", x = "SV Type") 
 number_SVs_plot
@@ -450,6 +450,16 @@ if(export_figures == TRUE){
   dev.off()
 }
 
+# 25 of the original 39 patients have balanced or complex SVs. Eight of these patients have a predicted position effect
+# 14/39 patients have copy number variants and 2 of these have position effects
+# balanced:
+(sum(driver_count$Freq[driver_count$Var1 %in% c("Indirect", "Both") & driver_count$Var2 == "Balanced"])+8) / 
+  (sum(driver_count$Freq[driver_count$Var2 == "Balanced"]) + 25)
+
+# Unbalanced
+(sum(driver_count$Freq[driver_count$Var1 %in% c("Indirect", "Both") & driver_count$Var2 == "CNV"])+2) / 
+  (sum(driver_count$Freq[driver_count$Var2 == "CNV"]) + 14)
+
 
 ```
 \newpage
@@ -506,7 +516,7 @@ Missed_driver_plot <- ggplot(Missed_driver_reasons, aes(fill = Var1, ymax = ymax
 Missed_driver_plot
 #Effects_drivers_plot
 if(export_figures == TRUE){
-  pdf(file = paste(Output_folder, "S7D_Missed_drivers_DGAP.pdf", sep = ""), width = 1.8, height = 1.8, family = "ArialMT", pointsize = 6)
+  pdf(file = paste(Output_folder, "S7E_Missed_drivers_DGAP.pdf", sep = ""), width = 1.8, height = 1.8, family = "ArialMT", pointsize = 6)
   print(Missed_driver_plot)
   dev.off()
 }
@@ -523,8 +533,9 @@ Genes_SVs_new_drivers$Contribution <- Genes_SVs_new_drivers$Phenomatches_high/Ge
 
  Genes_SVs_new_drivers$Block <- 2 
  Genes_SVs_new_drivers$Block[1:ceiling(nrow(Genes_SVs_new_drivers) / 2 )] <- 1 
-Genes_SVs_new_drivers$Phenomatches_high[Genes_SVs_new_drivers$HPO_Patient < 4] <- Genes_SVs_new_drivers$Phenomatches_low[Genes_SVs_new_drivers$HPO_Patient < 4]
- new_left <- ggplot(Genes_SVs_new_drivers[Genes_SVs_new_drivers$Block == 1,], aes(x = Gene_ID, y = Phenomatches_high/HPO_Patient, fill = Effect, alpha = Support)) + geom_bar(stat = "identity") +   
+#Genes_SVs_new_drivers$Phenomatches_high[Genes_SVs_new_drivers$HPO_Patient < 4] <- Genes_SVs_new_drivers$Phenomatches_low[Genes_SVs_new_drivers$HPO_Patient < 4]
+
+ new_left <- ggplot(Genes_SVs_new_drivers[Genes_SVs_new_drivers$Block == 1,], aes(x = Gene_ID, y = Contribution, fill = Effect, alpha = Support)) + geom_bar(stat = "identity") +   
    facet_grid(Patient ~ ., switch="y", scales = "free", space = "free") +  
    coord_flip(ylim = c(0,1), expand = c(0,0)) + theme_bw(base_size = 8) + 
    scale_x_discrete(breaks = Genes_SVs_new_drivers$Gene_ID, labels = Genes_SVs_new_drivers$hgnc_symbol) + 
@@ -536,7 +547,7 @@ Genes_SVs_new_drivers$Phenomatches_high[Genes_SVs_new_drivers$HPO_Patient < 4] <
          panel.grid.major.y = element_blank(), 
          axis.text.y = element_text(face = "italic"), legend.position="none") + 
    labs(y = "Relative contribution to phenotype",x = "Candidate drivers per patient") 
- new_right <- ggplot(Genes_SVs_new_drivers[Genes_SVs_new_drivers$Block == 2,], aes(x = Gene_ID, y = Phenomatches_high/HPO_Patient, fill = Effect, alpha = Support)) + geom_bar(stat = "identity") +   
+ new_right <- ggplot(Genes_SVs_new_drivers[Genes_SVs_new_drivers$Block == 2,], aes(x = Gene_ID, y = Contribution, fill = Effect, alpha = Support)) + geom_bar(stat = "identity") +   
    facet_grid(Patient ~ ., switch="y", scales = "free", space = "free") +  
    coord_flip(ylim = c(0,1), expand = c(0,0)) + theme_bw(base_size = 8) + 
    scale_x_discrete(breaks = Genes_SVs_new_drivers$Gene_ID, labels = Genes_SVs_new_drivers$hgnc_symbol) + 
