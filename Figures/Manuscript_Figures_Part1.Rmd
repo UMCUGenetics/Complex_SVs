@@ -60,8 +60,6 @@ Phenotypes$per <- gsub("%", "", Phenotypes$per)
 Phenotypes$per <- as.numeric(Phenotypes$per)
 Phenotypes$per <- Phenotypes$per / 100
 
-
-
 nervous_system <- c("Behavior disorders",
                     "Intellectual disability",
                     "Epilepsy",	
@@ -252,21 +250,21 @@ There are 17 patients with simple SVs and 22 patients with complex SVs.
 ```{r, echo = F, warning = F, message = F, fig.width = 4, fig.height = 5}
 pdf(file = paste(Output_folder, "S1A_Previous_techniques.pdf", sep = ""), width = 2, height = 2, pointsize = 6, family = "ArialMT")
 
-Previous_techniques <- data.frame(table(Junctions$Previous[!duplicated(Junctions$Individual)]))
-Previous_techniques$Var1 <- factor(Previous_techniques$Var1, levels = c("MPS","liWGS","Array+WES","Array"))
+Previous_techniques <- data.frame(table(Junctions$Previous[!duplicated(Junctions$ID)]))
+Previous_techniques$Var1 <- factor(Previous_techniques$Var1, levels = c("Targeted sequencing", "MPS", "liWGS", "Array+WES", "Array"))
 Previous_techniques_plot <- ggplot(Previous_techniques, aes(x = "", y = Freq, fill = Var1)) + geom_bar(width = 1, stat = "identity", col = "black", lwd = 0.3) + 
   coord_polar("y", start=0) +
   geom_text(aes(y = Freq / 2 + c(0, cumsum(Freq)[-length(Freq)]), x = 1.1, label = Freq), size = 2) + 
   geom_text(aes(x = 1.82, y = Freq / 2 + c(0, cumsum(Freq)[-length(Freq)]), label = Var1), size = 2) +
   #geom_label(aes(x = 1.82, y = value / 2 + c(0, cumsum(value)[-length(value)]), label = Labels), size = 2) +
-  scale_fill_manual(values = list("Array" = "#E41A1C", "Array+WES" = "#FF7F00", "liWGS" = "#377EB8", "MPS" = "#4DAF4A")) + 
+  scale_fill_manual(values = list("Array" = "#E41A1C", "Array+WES" = "#FF7F00", "liWGS" = "#377EB8", "MPS" = "#4DAF4A", "Targeted sequencing" = "#8A2BE2")) + 
   theme_minimal(base_size = 8) + 
   labs(y = "Previously used tests\n(# Individuals)") +
   theme(axis.text.x=element_blank(),
     #axis.title.x = element_blank(),
     axis.title.y = element_blank(),
     panel.border = element_blank(),
-    panel.grid=element_blank(),I
+    panel.grid=element_blank(),
     axis.ticks = element_blank(),
     legend.position="none")
 Previous_techniques_plot
